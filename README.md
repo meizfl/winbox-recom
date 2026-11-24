@@ -1,81 +1,142 @@
-# WinBox 3 — нативная статическая рекомпиляция для Linux и macOS
+# WinBox Recom
 
-Предоставленный `winbox64.v3.43p10.exe` статически переводится из x64 в C и
-собирается в ELF. Окно и поля оригинального WinBox работают через собственные
-мосты Windows API, SDL3 и Cairo. Wine и Proton не используются.
+A native Linux and macOS port of WinBox 3 through static recompilation. The supplied
+`winbox64.v3.43p10.exe` is translated from x86-64 machine code into C. The original
+application logic runs through a custom Windows API compatibility runtime built
+with SDL3, Cairo and POSIX APIs. Wine and Proton are not required.
 
-**Окно подключения запускается.** Проверены отрисовка, ввод адреса, переключение
-Managed/Neighbors, сохранение конфигурации и закрытие. Проверены вход на реальный RouterOS, загрузка описаний модулей и открытие
-основного окна сессии. Конфигурация устройства в этой проверке не изменялась. Это экспериментальный runtime, не готовая замена
-официального WinBox для администрирования сети.
+This is an unofficial, experimental compatibility runtime. Login to a real
+RouterOS device, module loading, Interfaces, Files and Terminal have been tested.
+These checks did not modify the router configuration. The project has not been
+validated as a complete replacement for the official WinBox client.
 
-## Скриншоты
+## Downloads
 
-Тёмная тема, новый набор иконок и пользовательские обои:
+[Download the latest release](https://github.com/meizfl/winbox-recom/releases/tag/v0.2.0-preview.3)
 
-![Тёмная тема с обоями](docs/screenshots/dark-wallpaper.png)
+| Platform | Package | Compatibility target |
+| --- | --- | --- |
+| Linux x86-64 | `winbox3-linux-amd64` | Debian 11+, X11 and native Wayland |
+| macOS Intel | `winbox3-macos-x86_64.zip` | macOS 10.14+ |
+| macOS Apple Silicon | `winbox3-macos-arm64.zip` | macOS 11.0+, native arm64 without Rosetta |
 
-Внутренние окна и терминал:
+The Linux executable is fully static and does not depend on the host glibc
+version. macOS packages include third-party libraries statically and use Apple's
+system libraries and frameworks. They are ad-hoc signed, without Apple
+notarization. Deployment targets and native Cocoa startup are checked in CI;
+physical machines running macOS 10.14 and 11 still require separate validation.
+Checksums are included in `SHA256SUMS`.
 
-![Interfaces и Terminal](docs/screenshots/dark-terminal.png)
+## Screenshots
 
-[Окно подключения в светлой теме](docs/screenshots/light-login.png).
+Dark theme, vector icons and a custom wallpaper:
 
-## Запуск
+![Dark theme with a custom wallpaper](docs/screenshots/dark-wallpaper.png)
 
-Из папки проекта:
+Internal windows and Terminal:
+
+![Interfaces and Terminal](docs/screenshots/dark-terminal.png)
+
+[Light-theme connection window](docs/screenshots/light-login.png).
+
+## Features
+
+- Light and dark themes, with a top-bar switch and a saved preference.
+- A shared vector icon set for both themes.
+- Blue active-window title bars and consistent internal-window stacking.
+- Custom workspace wallpapers in PNG, JPEG or BMP format.
+- Native HiDPI/Retina rendering with device-pixel frames and matching input coordinates.
+- Cached theme rendering for smoother dragging of windows with many fields.
+- Native file dialogs, text clipboard, input carets and resize cursors.
+- Native child-process launch from **New WinBox**.
+
+## Running
+
+On Linux, download the executable and run:
+
+```sh
+chmod +x winbox3-linux-amd64
+./winbox3-linux-amd64
+```
+
+On macOS, extract the ZIP for your architecture and open `WinBox Recom.app`.
+
+From a source checkout:
 
 ```sh
 ./run.sh
 ```
 
-`run.sh` выбирает готовый статический Linux-пакет, затем `build/linux-check`,
-затем `build/full`. Для явного пути задайте `WINBOX_BINARY`.
-Или напрямую: `./build/full/winbox3`. Скрипт разработки `run.sh` сохраняет профиль
-в `build/full/profile/Mikrotik/Winbox/`. При прямом запуске профиль находится
-в `$XDG_CONFIG_HOME/winbox-recom` или `~/.config/winbox-recom` на Linux,
-в `~/Library/Application Support/WinBox Recom` на macOS. Существующие настройки Windows
-не импортируются автоматически. Другой профиль можно выбрать явно:
+`run.sh` prefers the static Linux package, then `build/linux-check`, then
+`build/full`. Set `WINBOX_BINARY` to select an executable explicitly.
+
+### Profiles
+
+Direct launches store user data in:
+
+- Linux: `$XDG_CONFIG_HOME/winbox-recom`, or `~/.config/winbox-recom`.
+- macOS: `~/Library/Application Support/WinBox Recom`.
+
+The development `run.sh` uses `build/full/profile`; WinBox data is stored under
+its `Mikrotik/Winbox` subdirectory. Existing Windows settings are not imported
+automatically. Select a separate profile with:
 
 ```sh
 ./run.sh --profile /path/to/profile
 ```
 
-Проверен запуск Linux x86-64 через X11 и нативный Wayland. SDL3 выбирает
-доступный backend автоматически. Для явного выбора: `SDL_VIDEO_DRIVER=wayland ./run.sh`
-или `SDL_VIDEO_DRIVER=x11 ./run.sh`. В Wayland подменю создаются как popup-поверхности
-с координатами относительно родительского окна.
-Внутри sandbox Codex доступ к графической сессии требует отдельного разрешённого
-запуска; это ограничение окружения проверки, а не зависимость приложения от Wine.
+Release packages contain no router profiles or login credentials.
 
-## Обои рабочей области
+### Themes and wallpapers
 
-В верхнем меню **Settings → Wallpaper → Select wallpaper…** можно выбрать PNG, JPEG или BMP.
-Изображение заполняет рабочую область с сохранением пропорций и обрезкой по центру;
-оно не меняет фон таблиц, терминала и других внутренних окон. Цвета картинки
-сохраняются при переключении светлой и тёмной темы. Поддерживаются изображения
-до 8192 пикселей по стороне и 32 мегапикселей.
+Use the top-right theme button, or select the initial theme explicitly:
 
-Копия сохраняется в `wallpaper.png` в корне выбранного профиля и загружается при
-следующем запуске. **Settings → Wallpaper → Remove wallpaper** возвращает обычный фон.
-Отмена выбора или неподдерживаемый файл сохраняют предыдущие обои.
+```sh
+./run.sh --theme dark
+./run.sh --theme light
+```
 
-## HiDPI и Retina
+Choose **Settings → Wallpaper → Select wallpaper…** to set a background.
+The image fills the workspace while preserving its aspect ratio, with a centered
+crop. Tables, Terminal and other internal windows keep their own backgrounds.
+Wallpaper colors are preserved in both themes. Supported images are limited to
+8192 pixels per side and 32 megapixels.
 
-Кадр рисуется в физических пикселях, без растягивания готового изображения.
-DPI и размеры элементов определяются масштабом рабочего стола; мышь, меню и
-внутренние окна используют согласованные координаты. В Wayland-сеансе по умолчанию
-выбирается нативный Wayland, если backend не задан явно. Проверены экран 3000×2000
-при 200%, ввод, Backspace, переключение темы и меню.
+A copy is saved as `wallpaper.png` in the profile root and loaded on the next
+launch. **Settings → Wallpaper → Remove wallpaper** restores the normal
+background. Cancelling the picker or selecting an invalid image keeps the
+previous wallpaper.
 
-![Нативная HiDPI-отрисовка при 200%](docs/screenshots/hidpi-2x.png)
+### HiDPI and display backends
 
-## Сборка
+GDI renders directly in device pixels; the completed frame is not stretched.
+DPI and control sizes follow desktop scaling, with consistent mouse, menu and
+internal-window coordinates. A 3000×2000 Wayland output at 200% is covered by an
+automated test, including native framebuffer size, sharp glyphs, input,
+Backspace, the theme button and popup menus.
 
-Нужны компилятор C11 с поддержкой `__int128` (Clang/GCC), CMake, pkg-config,
-Python 3, Capstone 5, SDL3 и Cairo с заголовочными файлами. Текущий системный
-backend использует POSIX API и iconv. macOS использует Cocoa через SDL3; в проект включены исправления для Apple Silicon
-и Darwin sockaddr. Нативный backend Windows не реализован.
+![Native HiDPI rendering at 200%](docs/screenshots/hidpi-2x.png)
+
+Native Wayland is preferred in a Wayland session unless a backend is explicitly
+selected. To choose a backend manually:
+
+```sh
+SDL_VIDEO_DRIVER=wayland ./run.sh
+SDL_VIDEO_DRIVER=x11 ./run.sh
+```
+
+Wayland submenus use popup surfaces positioned relative to their parent windows.
+The static Linux build presents frames through `wl_shm`, using three buffers
+that are not reused until released by the compositor. This does not require EGL
+or a dynamically loaded graphics driver. Static Wayland builds disable libdecor;
+X11 can be used when server-side window decorations are unavailable.
+
+## Building from source
+
+Requirements: a C11 compiler with `__int128` support (Clang or GCC), CMake,
+pkg-config, Python 3, Capstone 5, SDL3, Cairo, FreeType, Fontconfig and iconv.
+The current host runtime uses POSIX APIs. macOS uses Cocoa through SDL3; a native
+Windows host backend is not implemented.
 
 ```sh
 python3 -m pip install -r requirements.txt
@@ -85,209 +146,11 @@ ctest --test-dir build/full --output-on-failure
 ./run.sh
 ```
 
-`winbox-probe` сохранён как второе имя диагностического исполняемого файла.
-Старый режим `-DWINBOX_FULL_DISCOVERY=OFF` переводит только bootstrap и четыре
-маленькие функции для тестов; он не запускает интерфейс.
+`winbox-probe` is retained as a diagnostic executable. The legacy
+`WINBOX_FULL_DISCOVERY=OFF` mode translates only bootstrap code and a few small
+test functions; it does not launch the UI.
 
-## Проверка интерфейса без рабочего стола
-
-```sh
-SDL_VIDEO_DRIVER=dummy ./run.sh --smoke-ms 5000 --screenshot /tmp/winbox-login.png
-```
-
-Интервал отсчитывается после входа в цикл сообщений. В обычном режиме приложение
-остаётся открытым до закрытия пользователем. `WINBOX_TRACE=1` включает подробный
-журнал вызовов API, `WINBOX_INSTRUCTION_LIMIT` задаёт диагностический лимит числа
-исполняемых инструкций.
-
-CTest проверяет оригинальные переведённые функции, арифметику, преобразования
-чисел и контроль изменения инструкций. На Linux x86-64 короткие функции
-сравнения дополнительно сверяются с оригинальными машинными инструкциями через
-Microsoft x64 ABI в отдельном RX-буфере. Это не запуск всего EXE.
-
-Отдельный GUI-тест запускает переведённый WinBox через SDL dummy, вводит
-документационный адрес `192.0.2.1` через буфер обмена с лишним символом, удаляет его настоящим
-событием SDL Backspace, переключает Neighbors, проверяет сохранение
-конфигурации и закрывает окно. Он не нажимает Connect и не подключается к роутеру.
-Тестовый профиль создаётся отдельно и удаляется после проверки.
-
-Дополнительные тесты проверяют выполнение переведённой функции в фоновом потоке,
-изоляцию TLS и идентификаторов, рекурсивные блокировки и выход при спящем потоке.
-`native-connection-smoke` нажимает Connect с адресом одноразового TCP-сервера на
-`127.0.0.1`: проверяет фоновый DNS-поток, Windows/POSIX addrinfo, установление TCP
-и штатное закрытие. Сервер не реализует RouterOS и не проверяет аутентификацию.
-В sandbox без доступа к локальным сокетам этот тест явно пропускается.
-
-Гостевые инструкции и системные мосты защищены общим рекурсивным mutex VM, поэтому
-обращения разных потоков к общей гостевой памяти сериализованы. Ожидание SDL,
-Sleep и системный DNS освобождают VM. Это поддержка многопоточного поведения,
-а не обещание ускорения гостевого кода на нескольких ядрах.
-
-## Устройство переноса
-
-Подход аналогичен локальному `Skyrim-Linux`: статическая рекомпиляция и собственный
-системный runtime. Его x86-32 код не копировался: этот WinBox является PE64.
-
-- `tools/pe64.py`: разбор PE, образа памяти, импортов и unwind-записей.
-- `tools/discover64.py`: обход инструкций, указателей функций и относительных
-  таблиц переходов; обнаружение патчей в заполнении исполняемых секций.
-- `tools/lift64.py`: перевод инструкций в 64 C-файла, встраивание образа как
-  данных и подготовка диспетчера импортов.
-- `runtime/rt.c`: регистры, исполнение, обратные вызовы и числовые операции.
-- `runtime/host.c`: гостевая память, TEB, файловые и системные мосты, PE-ресурсы.
-- `runtime/crt.c`: нужная запуску часть C-библиотеки и форматирования.
-- `runtime/ui.c`: оконные процедуры оригинального WinBox, сообщения, ввод и GDI
-  через SDL/Cairo, базовый EDIT и таймеры.
-- `runtime/threads.c`: CreateThread с отдельными стеками/TEB, идентификаторами и
-  TLS, рекурсивные critical sections и корректное завершение фоновых потоков.
-- `runtime/network.c`: базовые Winsock-вызовы поверх POSIX sockets и события
-  готовности, перечисление IPv4-интерфейсов и преобразование getaddrinfo между
-  различающимися структурами Windows и POSIX. Поток DNS не блокирует цикл сообщений.
-
-Гостевые адреса остаются 64-битными, а данные читаются без зависимости от
-выравнивания и порядка байтов хоста. Куча этой конкретной сборки расположена ниже
-4 ГиБ: патч по адресу `0x65b119` в предоставленном EXE читает указатель пути через
-32-битный ECX. Перед выделениями доступны нулевые 16-байтные заголовки для другой
-проверки кучи из p10. Это особенности совместимости с данным бинарником.
-
-Исполняемые PE-секции содержат также изменяемые данные. Поэтому запись в такую
-секцию сама по себе разрешена. Перед исполнением инструкций из изменённой страницы
-их байты сверяются с исходными; изменённый машинный код останавливается с
-диагностикой, а не исполняется через устаревшее C-тело.
-
-Временные PNG-файлы создаются в отдельном каталоге процесса и очищаются при выходе.
-Сохранение конфигурации учитывает разные файловые системы у `/tmp` и профиля:
-при `MOVEFILE_COPY_ALLOWED` применяется копирование через временный файл рядом
-с назначением и атомарное переименование.
-
-## Ограничения
-
-Проверен запуск окна, а не полный набор функций WinBox. Некоторые мосты имеют
-только необходимую интерфейсу часть контракта. Создание и завершение обычных фоновых потоков реализовано; пока нет полного
-контракта приостановки/возобновления потоков и DLL thread attach/detach. Не закончены
-Windows-исключения, динамические DLL, ряд сетевых и криптографических API, меню,
-диалоги и drag-and-drop. Текстовый clipboard и сочетания Ctrl поддерживаются. Иконки используют индексированные DIB с палитрами; монохромные PE-ресурсы
-адаптируются к 8-битному формату загрузчика WinBox.
-Сетевой вход проверен на одном реальном устройстве RouterOS. MAC-подключения,
-изменение конфигурации, сохранение паролей и длительная работа с устройствами
-не проверены. Неизвестные инструкции и API останавливают программу
-с точным адресом и именем, если пользователь попадает в неподдерживаемую ветку.
-
-`build/full/gen/coverage.json` содержит текущее покрытие генератора и список
-диспетчеризуемых импортов. Эти числа не являются процентом готовности порта или
-доказательством эквивалентности всех инструкций и API.
-
-## Дополнительный анализ
-
-```sh
-python3 tools/analyze_binary.py
-python3 tools/discover64.py winbox64.v3.43p10.exe
-python3 tools/extract_embedded.py winbox64.v3.43p10.exe
-```
-
-Отчёты находятся в `analysis/`, извлечённые и проверенные PNG — в `build/assets/`.
-Исходный EXE, сгенерированные тела и образ принадлежат исходному приложению;
-генерируемые C-файлы и промежуточные сборки не включаются в Git. Готовые
-пакеты публикуются отдельно в GitHub Releases.
-
-При восстановлении геометрии окна все существующие DC перепривязываются к новому
-холсту. GUI-тест дополнительно открывает сохранённый профиль повторно и проверяет,
-что элементы интерфейса не исчезли. На хосте без Windows COM `CoCreateInstance`
-возвращает `REGDB_E_CLASSNOTREG` и нулевой объект; необязательные COM-функции
-обрабатываются стандартными ветками отказа оригинального WinBox.
-
-Некорректные UTF-8-последовательности в отображаемом тексте заменяются символом
-замены перед передачей Cairo: повреждённое поле больше не прерывает отрисовку
-остального окна. Исходные данные профиля при этом не изменяются. Этот случай
-проверяется GUI-тестом на сохранённом профиле.
-
-Куча сохраняет отображение освобождённых блоков и повторно использует их после
-карантина из 64 выделений: `HeapFree` не означает немедленного удаления
-виртуальных страниц. Это позволяет завершить обработчик отказа подключения
-в данном бинарнике, обращающийся к объекту после его освобождения. Отказ с
-неверным паролем проверен на RouterOS; выход больше не вызывает unmapped memory.
-
-Пункты меню хранят текст, идентификаторы, состояние и вложенные меню.
-`TrackPopupMenuEx` показывает SDL/Cairo-меню с выбором мышью или клавиатурой,
-учитывает запрещённые пункты и возвращает команду оригинальному WinBox.
-
-Закрытие окна уничтожает дочерние окна, таймеры, свойства и оконные DC.
-Повторное использование слота выдаёт новый дескриптор: отложенные сообщения
-со старым дескриптором не вызывают обработчики нового окна.
-Всплывающее меню продолжает обслуживать сеть, таймеры и оконные сообщения.
-
-На реальном RouterOS дополнительно открыто окно Interfaces: получены имена
-интерфейсов, MTU и текущий трафик. Конфигурация устройства при проверке не менялась.
-При захвате мыши события переводятся в координаты захватившего окна, что
-предотвращает выбор соседнего пункта при отпускании кнопки над дочерним canvas.
-
-Индексированные DIB (1/4/8 бит) отображаются через RGB-палитру. Маски CreateBitmap
-и CreateIconIndirect сохраняют прозрачность; BitBlt реализует таблицу ROP3,
-включая SRCAND, SRCPAINT и SRCINVERT. Контракт проверяется по цветам пикселей
-и прозрачности значка, наложенного на фон другого цвета.
-
-События SDL обрабатываются и при непустой очереди сообщений гостя. WM_PAINT,
-WM_SIZE, WM_MOUSEMOVE и WM_TIMER объединяются; ввод и размеры имеют приоритет
-перед фоновым рисованием. Полная композиция окна выполняется по грязному флагу
-не чаще раза в 16 мс, с повторным использованием холста. ReleaseDC больше
-не выводит полный кадр для каждого отдельного элемента. GUI-тест создаёт
-серию быстрых native resize и проверяет итоговый холст 960×720.
-
-Mutex VM удерживается на ограниченном кванте из 256 инструкций, вместо
-повторного lock/unlock на каждой инструкции. Блокирующие импорты продолжают
-освобождать VM; для диагностики доступен `WINBOX_VM_QUANTUM=1`.
-
-Геометрия сопровождается WM_WINDOWPOSCHANGED: обработчик оригинального WinBox
-пересчитывает раскладку именно по этому сообщению. DeferWindowPos использует
-отдельные дескрипторы пакетов; EndDeferWindowPos сначала применяет все размеры
-и позиции, затем отправляет уведомления. Это устраняет оставшуюся рабочую
-область 800×600 внутри увеличенного окна. Перемещение без изменения размера
-не инициирует повторную отрисовку содержимого перемещаемого дочернего окна.
-Последовательные SDL_MOUSEMOTION объединяются с сохранением границ нажатий
-и отпусканий кнопок.
-
-Files проверен на реальном RouterOS: список и даты файлов загружаются,
-внутреннее окно перемещается. _gmtime64 и strftime преобразуют Windows tm
-в нативное представление; буферы времени и errno независимы для потоков.
-Тесты включают эпоху UNIX, 2038 год, неверные значения и вложенные пакеты
-DeferWindowPos, не изменяющие геометрию до EndDeferWindowPos.
-
-### Внешний вид
-
-Системный шрифт интерфейса — Tahoma 11 px, фиксированный шрифт терминала —
-Courier New 12 px. Эти шрифты должны быть установлены в системе для совпадения
-с оригиналом; при их отсутствии Fontconfig подберёт замену. Верхнее меню
-рисуется отдельно от клиентской области, а bitmap-ресурсы, включая вертикальную
-полосу RouterOS WinBox, загружаются из исходного PE. Палитра серых элементов
-приведена к предоставленному образцу оригинала. Декорации внешнего окна задаёт
-оконный менеджер Linux.
-
-Высота верхнего меню учитывается один раз при преобразовании координат
-захваченной мыши. Регрессионная проверка покрывает нажатие и отпускание с
-`SetCapture`, а также взаимное преобразование клиентских и экранных координат.
-
-Для группы Switch значок 24 наследуется пунктами группы при текстовом чтении
-`roteros.jg`, даже когда пункт Settings с исходным `groupIcon` скрыт по возможностям
-устройства. Бинарное чтение для CRC и файлы кеша остаются исходными; это проверено
-отдельной регрессионной проверкой.
-
-Подписи всплывающих меню и сочетания клавиш после табуляции выводятся
-отдельными колонками; галочки рисуются геометрически. Переход фокуса внутри
-цепочки родительского окна и подменю сохраняет логический фокус WinBox.
-Отпускание кнопки, открывшей меню, не выбирает случайный пункт. Вложенные меню
-Wayland создаются дочерними popup-поверхностями предыдущего меню.
-
-Добавлены `inet_ntoa` с отдельным буфером на поток и `log10` с аргументом и
-результатом в XMM0 по Win64 ABI; проверяются также ошибки нуля и отрицательного
-аргумента. В нативном Wayland проверен выбор IP → Addresses с загрузкой таблицы.
-
-
-## Переносимые пакеты
-
-Linux amd64: полностью статический ELF на musl, без зависимости от версии glibc.
-Цель совместимости — Debian 11+. Для графического запуска нужен X11 или Wayland
-и установленные системные шрифты. Wayland libdecor в статическом пакете отключён;
-при отсутствии серверных декораций можно выбрать `SDL_VIDEO_DRIVER=x11`.
+### Static Linux package
 
 ```sh
 podman build -t winbox-static-builder -f packaging/linux-static.Dockerfile .
@@ -296,8 +159,12 @@ podman run --rm -v "$PWD:/src:ro" -v "$PWD/build/linux-static:/out" \
   winbox-static-builder sh /src/packaging/build-linux-static.sh
 ```
 
-macOS Intel: `.app` с целевой версией 10.14, статическими сторонними библиотеками
-и системными библиотеками Apple. Сборка на Intel Mac:
+The result is a musl-based static ELF. A desktop display server and installed
+system fonts are still needed for graphical use.
+
+### macOS packages
+
+Build natively on the target Mac architecture:
 
 ```sh
 brew install cmake ninja pkgconf gperf
@@ -305,45 +172,117 @@ python3 -m pip install -r requirements.txt meson
 bash packaging/build-macos.sh
 ```
 
-Скрипт проверяет архитектуру, deployment target и отсутствие сторонних dylib.
-Сборка подписана ad-hoc, без нотариализации Apple. CI собирает её на macOS 15 Intel;
-запуск на физической macOS 10.14 требует отдельной проверки.
-Версии и SHA-256 исходников зависимостей фиксированы в `packaging/sources.json`.
+The script defaults to the host architecture. Use `WINBOX_MACOS_ARCH=x86_64` or
+`WINBOX_MACOS_ARCH=arm64` explicitly when needed, with a separate build directory
+and dependency prefix for each architecture. For example:
 
-Тесты `cursor-resource` и `drawtext-clip` покрывают загрузку оригинального
-курсора перетаскивания столбцов и обрезку заголовков, включая многоточие.
-`cursor-resource` требует графический backend (на Linux подходит скрытый Xvfb).
-Для визуальной сверки `tools/wine_reference.py` допускает только отдельный
-DISPLAY `:91`, чтобы Wine не появлялся на рабочем столе.
+```sh
+WINBOX_MACOS_ARCH=arm64 bash packaging/build-macos.sh build/macos-arm64
+```
 
-Исходники runtime и инструментов опубликованы под GPL-3.0 (см. LICENSE).
-Оригинальный PE и его встроенные ресурсы не становятся GPL; см. NOTICE.
+The script checks the architecture, deployment target and absence of third-party
+dynamic-library dependencies. CI builds and tests Intel and Apple Silicon
+packages natively. Dependency versions and SHA256 hashes are pinned in
+`packaging/sources.json`.
 
+## Tests and diagnostics
 
-Проверка сборки: 11/11 CTest на Linux; macOS Intel CI также выполняет все тесты,
-проверяет только системные dylib и deployment target 10.14. Linux ELF проверяется
-на отсутствие INTERP и NEEDED. Дополнительная проверка запуска проводится в Debian 11.
-Пакеты macOS без Tahoma/Courier New используют системные замены шрифтов;
-это может менять внешний вид и ширину текста.
+A display-free GUI smoke test can be run with SDL's dummy backend:
 
+```sh
+SDL_VIDEO_DRIVER=dummy ./run.sh --smoke-ms 5000 --screenshot /tmp/winbox-login.png
+```
 
-В полностью статическом Linux-пакете Wayland выводит кадры непосредственно
-через `wl_shm`: три буфера не переиспользуются до возврата композитором.
-Это не требует EGL или динамического видеодрайвера. Тест
-`native-surface-tests` проверяет настоящий SDL window surface: 40 кадров и два
-изменения размера. `packaging/test-linux-static.sh` запускает его и CTest
-в отдельном headless Weston, без доступа к рабочему столу.
+The timeout starts when the message loop is ready. Normal launches remain open
+until closed by the user. `WINBOX_TRACE=1` enables API tracing;
+`WINBOX_INSTRUCTION_LIMIT` sets a diagnostic instruction limit.
 
-`New WinBox` запускает нативный дочерний процесс. Аргументы передаются исходному
-WinBox через `_acmdln` и `GetCommandLineW`; реализованы кавычки Windows,
-`CommandLineToArgvW`, дескрипторы процесса и закрытие унаследованных сетевых
-соединений в дочернем процессе. Отдельный тест проверяет аргументы с пробелами,
-кавычками и завершающими обратными слешами, а также рабочий каталог.
+Tests cover translated instructions and functions, CRT scanning and time
+conversion, threading/TLS, process launch and Windows command-line quoting,
+network address layouts, cursor resources, text clipping, vector icons, theme
+persistence, wallpaper composition, window stacking and DPI coordinate mapping.
+The GUI tests use disposable profiles and do not change a real router.
 
-### Пакеты macOS
+The local connection smoke test uses a temporary TCP server on `127.0.0.1`.
+It checks DNS, address conversion, TCP establishment and shutdown; it does not
+implement RouterOS authentication. It is explicitly skipped when local sockets
+are unavailable.
 
-Доступны отдельные сборки Intel x86_64 (10.14+) и Apple Silicon arm64 (11.0+).
-`packaging/build-macos.sh` выбирает архитектуру текущего Mac; можно задать
-`WINBOX_MACOS_ARCH=x86_64` или `WINBOX_MACOS_ARCH=arm64` явно. Для каждой архитектуры
-нужен отдельный каталог сборки и зависимостей. Пакет arm64 собирается и тестируется
-нативно на Apple Silicon.
+`packaging/test-linux-static.sh` runs native SDL presentation tests and CTest in
+headless Weston, then checks HiDPI on a separate 3000×2000 output at 200%.
+`native-surface-tests` exercises 40 real window-surface frames and two resizes.
+The HiDPI-specific test is skipped outside a suitable display and run explicitly
+in the scaled Wayland session. Release validation also runs Linux on Debian 11
+and the packaged macOS apps through Cocoa in both themes.
+
+For reference rendering, `tools/wine_reference.py` uses a separate display
+`:91` so Wine does not appear on the user's desktop.
+
+## How it works
+
+| Component | Purpose |
+| --- | --- |
+| `tools/pe64.py` | PE parsing, memory image, imports and unwind records |
+| `tools/discover64.py` | Instruction discovery, function pointers and jump tables |
+| `tools/lift64.py` | Translation into 64 C units, embedded image data and import dispatch |
+| `runtime/rt.c` | Guest registers, execution, callbacks and arithmetic |
+| `runtime/host.c` | Guest memory, TEB, files, system APIs and PE resources |
+| `runtime/crt.c` | CRT functions and formatting used by WinBox |
+| `runtime/ui.c` | Original window procedures, messages, input and GDI through SDL/Cairo |
+| `runtime/threads.c` | Guest stacks/TEBs, TLS, recursive locks and thread lifecycle |
+| `runtime/network.c` | Winsock-to-POSIX sockets, events, interfaces and address conversion |
+| `runtime/process.c` | Native process launch and process-handle compatibility |
+
+The approach is static recompilation with a custom runtime, similar to the local
+Skyrim-Linux project. Its x86-32 runtime was not copied: this WinBox input is PE64.
+
+Guest addresses remain 64-bit. Memory accesses do not assume host alignment or
+byte order. This particular patched input requires guest heap allocations below
+4 GiB because a path pointer is read through 32-bit ECX at `0x65b119`. Allocations
+also provide zeroed 16-byte headers for another p10 heap check. Freed blocks are
+quarantined before reuse to accommodate a known connection-failure handler.
+
+Executable PE sections may also contain mutable data. Writes are allowed, but
+instructions on modified pages are compared with their original bytes before
+execution. Modified machine code stops with a diagnostic instead of running an
+outdated translated body.
+
+Guest execution and host bridges share a recursive VM mutex. Blocking SDL, sleep
+and DNS calls release it. This supports guest threading behavior without claiming
+that guest code executes in parallel across host cores.
+
+Additional analysis tools:
+
+```sh
+python3 tools/analyze_binary.py
+python3 tools/discover64.py winbox64.v3.43p10.exe
+python3 tools/extract_embedded.py winbox64.v3.43p10.exe
+```
+
+Reports are written to `analysis/`, extracted PNG assets to `build/assets/`.
+Generated C and intermediate build files are not committed.
+
+## Limitations
+
+Some Windows API bridges implement only the contract needed by the supported
+application paths. Windows exceptions, dynamic DLL loading, thread
+suspend/resume and DLL thread notifications are incomplete. Some network,
+cryptographic, dialog and drag-and-drop paths remain unsupported. Unknown
+instructions or APIs stop with their exact address and name.
+
+MAC-address connections, configuration changes and long-running production
+sessions have not been comprehensively validated. Generator coverage in
+`build/full/gen/coverage.json` is not a measure of application completeness or
+proof of full Windows API equivalence.
+
+Tahoma and Courier New provide the closest match to the original UI. These fonts
+are not bundled; Fontconfig selects installed substitutes when they are absent.
+Font substitutions and the host window manager can affect appearance.
+
+## License
+
+The native runtime, translator and tooling are distributed under GPL-3.0; see
+[LICENSE](LICENSE). The original PE input and its embedded resources retain their
+original ownership and licensing; the project license does not relicense them.
+See [NOTICE](NOTICE) for third-party notices. This project is not affiliated with
+or endorsed by MikroTik.
