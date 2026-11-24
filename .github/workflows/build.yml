@@ -43,7 +43,7 @@ jobs:
           if [ '${{ job.status }}' = failure ]; then
             python3 - <<'PY'
           from pathlib import Path
-          text = '\n'.join(Path('build-macos.log').read_text(errors='replace').splitlines()[-80:])
+          text = Path('build-macos.log').read_text(errors='replace')[-3500:]
           print('::error title=macOS build diagnostics::' + text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
           PY
           fi

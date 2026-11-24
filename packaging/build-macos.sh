@@ -41,6 +41,7 @@ meson_dep cairo -Dfontconfig=enabled -Dfreetype=enabled -Dpng=enabled -Dquartz=d
 cmake_dep sdl -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_DEPS_SHARED=OFF \
   -DSDL_AUDIO=OFF -DSDL_JOYSTICK=OFF -DSDL_HAPTIC=OFF -DSDL_SENSOR=OFF -DSDL_CAMERA=OFF
 cmake -S "$src" -B "$out/app-build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DPython3_EXECUTABLE="$(command -v python3)" \
   -DCMAKE_OSX_DEPLOYMENT_TARGET=10.14 -DCMAKE_OSX_ARCHITECTURES=x86_64 \
   -DWINBOX_STATIC_DEPENDENCIES=ON -DIconv_INCLUDE_DIR="$SDKROOT/usr/include" \
   -DIconv_LIBRARY="$SDKROOT/usr/lib/libiconv.tbd"
