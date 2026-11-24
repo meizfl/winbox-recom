@@ -1,0 +1,58 @@
+name: Publish validated packages
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/publish.yml]
+  workflow_dispatch:
+    inputs:
+      build_run:
+        description: Successful Native packages workflow run
+        required: true
+        default: '45438502769'
+      tag:
+        description: Preview tag for that source snapshot
+        required: true
+        default: v0.1.0-preview.2
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      BUILD_RUN: ${{ inputs.build_run || '45438502769' }}
+      PREVIEW_TAG: ${{ inputs.tag || 'v0.1.0-preview.2' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require successful package validation
+        run: gh run watch "$BUILD_RUN" --exit-status --interval 30
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ env.BUILD_RUN }}
+          path: packages
+      - name: Publish validated artifacts
+        shell: bash
+        run: |
+          {
+            mkdir release-assets
+            find packages -type f \( -name winbox3-linux-amd64 -o -name '*.zip' \) -exec cp '{}' release-assets/ \;
+            test -f release-assets/winbox3-linux-amd64
+            test -f release-assets/winbox3-macos-x86_64.zip
+            cp LICENSE NOTICE packaging/sources.json release-assets/
+            (cd release-assets; sha256sum winbox3-* > SHA256SUMS)
+            source_commit=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN" --jq .head_sha)
+            gh release view "$PREVIEW_TAG" || gh release create "$PREVIEW_TAG" --target "$source_commit" --title "$PREVIEW_TAG" --notes 'Native Linux amd64 static ELF and macOS Intel app targeting 10.14. Runtime tests, native headless Wayland and Debian 11 smoke are required to pass. Experimental compatibility runtime; physical macOS 10.14 validation remains outstanding.' --prerelease
+            gh release upload "$PREVIEW_TAG" release-assets/* --clobber
+          } 2>&1 | tee publish.log
+      - name: Report publication failure
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('publish.log')
+          text = path.read_text(errors='replace')[-3500:] if path.exists() else 'Build validation or artifact download failed before publication.'
+          print('::error title=Publish diagnostics::' + text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+          PY
