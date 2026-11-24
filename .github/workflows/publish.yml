@@ -8,7 +8,7 @@ on:
       build_run:
         description: Successful Native packages workflow run
         required: true
-        default: '45495968949'
+        default: '45496618769'
       linux_run:
         description: Workflow run containing the successful Linux job
         required: true
@@ -16,16 +16,24 @@ on:
       tag:
         description: Existing preview tag for that source snapshot
         required: true
-        default: v0.2.0-preview.1
+        default: v0.2.0-preview.2
 permissions:
   contents: write
   actions: read
 jobs:
   macos-package-smoke:
-    runs-on: macos-15-intel
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 50
     env:
-      BUILD_RUN: ${{ inputs.build_run || '45495968949' }}
+      BUILD_RUN: ${{ inputs.build_run || '45496618769' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -35,12 +43,12 @@ jobs:
         with:
           github-token: ${{ github.token }}
           run-id: ${{ env.BUILD_RUN }}
-          name: winbox3-macos-x86_64
+          name: winbox3-macos-${{ matrix.arch }}
           path: package
       - name: Run packaged app through Cocoa
         shell: bash
         run: |
-          ditto -x -k package/winbox3-macos-x86_64.zip "$RUNNER_TEMP/winbox-package"
+          ditto -x -k package/winbox3-macos-${{ matrix.arch }}.zip "$RUNNER_TEMP/winbox-package"
           SDL_VIDEO_DRIVER=cocoa "$RUNNER_TEMP/winbox-package/WinBox Recom.app/Contents/MacOS/winbox3" --profile "$RUNNER_TEMP/winbox-profile" --smoke-ms 2000 --screenshot "$RUNNER_TEMP/winbox-cocoa.png" 2>&1 | tee cocoa.log
           grep -q 'WinBox event loop ready' cocoa.log
           ! grep -qE 'lift stopped|WinBox presentation failed' cocoa.log
@@ -59,9 +67,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
-      BUILD_RUN: ${{ inputs.build_run || '45495968949' }}
+      BUILD_RUN: ${{ inputs.build_run || '45496618769' }}
       LINUX_RUN: ${{ inputs.linux_run || '45495685290' }}
-      PREVIEW_TAG: ${{ inputs.tag || 'v0.2.0-preview.1' }}
+      PREVIEW_TAG: ${{ inputs.tag || 'v0.2.0-preview.2' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -81,6 +89,12 @@ jobs:
           run-id: ${{ env.BUILD_RUN }}
           name: winbox3-macos-x86_64
           path: packages/winbox3-macos-x86_64
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ env.BUILD_RUN }}
+          name: winbox3-macos-arm64
+          path: packages/winbox3-macos-arm64
       - name: Publish validated artifacts
         shell: bash
         run: |
@@ -89,6 +103,7 @@ jobs:
             find packages -type f \( -name winbox3-linux-amd64 -o -name '*.zip' \) -exec cp '{}' release-assets/ \;
             test -f release-assets/winbox3-linux-amd64
             test -f release-assets/winbox3-macos-x86_64.zip
+            test -f release-assets/winbox3-macos-arm64.zip
             cp LICENSE NOTICE packaging/sources.json release-assets/
             cp docs/screenshots/*.png release-assets/
             (cd release-assets; sha256sum winbox3-* > SHA256SUMS)
@@ -99,6 +114,7 @@ jobs:
             tag_commit=$(git rev-list -n 1 "$PREVIEW_TAG" 2>/dev/null || git ls-remote origin "refs/tags/$PREVIEW_TAG" | cut -f1)
             test "$tag_commit" = "$source_commit"
             gh release view "$PREVIEW_TAG" || gh release create "$PREVIEW_TAG" --verify-tag --title "WinBox Recom $PREVIEW_TAG — themes, icons and wallpapers" --notes-file "docs/releases/$PREVIEW_TAG.md" --prerelease
+            gh release edit "$PREVIEW_TAG" --title "WinBox Recom $PREVIEW_TAG — themes, icons and wallpapers" --notes-file "docs/releases/$PREVIEW_TAG.md" --prerelease
             gh release upload "$PREVIEW_TAG" release-assets/* --clobber
           } 2>&1 | tee publish.log
       - name: Report publication failure
