@@ -13,6 +13,7 @@ export LDFLAGS="-arch x86_64 -mmacosx-version-min=10.14"
 export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig:$prefix/share/pkgconfig"
 unset PKG_CONFIG_PATH || true
 export CMAKE_PREFIX_PATH="$prefix"
+if [ ! -f "$prefix/.winbox-sdk-ready" ]; then
 python3 "$src/packaging/fetch_sources.py" zlib png expat freetype fontconfig pixman cairo sdl --cache "$out/cache" --extract "$out/sources"
 cmake_dep() {
   local name=$1; shift
@@ -39,7 +40,10 @@ meson_dep cairo -Dfontconfig=enabled -Dfreetype=enabled -Dpng=enabled -Dquartz=d
   -Dxlib=disabled -Dxcb=disabled -Dxlib-xcb=disabled -Dglib=disabled -Dlzo=disabled \
   -Dspectre=disabled -Dsymbol-lookup=disabled -Dtests=disabled -Dgtk_doc=false -Dgtk2-utils=disabled
 cmake_dep sdl -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_DEPS_SHARED=OFF \
-  -DSDL_AUDIO=OFF -DSDL_JOYSTICK=OFF -DSDL_HAPTIC=OFF -DSDL_SENSOR=OFF -DSDL_CAMERA=OFF
+  -DSDL_AUDIO=OFF -DSDL_JOYSTICK=OFF -DSDL_HAPTIC=OFF -DSDL_SENSOR=OFF -DSDL_CAMERA=OFF \
+  -DSDL_HIDAPI=OFF -DSDL_HIDAPI_LIBUSB=OFF -DSDL_TRAY=OFF -DSDL_TEST_LIBRARY=OFF
+touch "$prefix/.winbox-sdk-ready"
+fi
 cmake -S "$src" -B "$out/app-build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DPython3_EXECUTABLE="$(command -v python3)" \
   -DCMAKE_OSX_DEPLOYMENT_TARGET=10.14 -DCMAKE_OSX_ARCHITECTURES=x86_64 \

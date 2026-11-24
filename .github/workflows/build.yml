@@ -31,9 +31,19 @@ jobs:
           python-version: '3.12'
       - run: brew install cmake ninja pkgconf gperf
       - run: python3 -m pip install 'capstone>=5.0.7,<6' meson
+      - uses: actions/cache/restore@v4
+        id: sdk-cache
+        with:
+          path: build/macos-release/deps
+          key: macos-10.14-sdk-v2-${{ hashFiles('packaging/sources.json') }}
       - name: Build macOS package
         shell: bash
         run: bash packaging/build-macos.sh 2>&1 | tee build-macos.log
+      - uses: actions/cache/save@v4
+        if: always() && steps.sdk-cache.outputs.cache-hit != 'true'
+        with:
+          path: build/macos-release/deps
+          key: macos-10.14-sdk-v2-${{ hashFiles('packaging/sources.json') }}
       - name: Build diagnostics
         if: always()
         run: |
