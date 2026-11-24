@@ -21,6 +21,21 @@ permissions:
   contents: write
   actions: read
 jobs:
+  refresh-release-notes:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refresh English descriptions for published releases
+        shell: bash
+        run: |
+          for notes in docs/releases/*.md; do
+            tag=$(basename "$notes" .md)
+            if gh release view "$tag" --json tagName >/dev/null 2>&1; then
+              gh release edit "$tag" --notes-file "$notes"
+            fi
+          done
   validate-builds:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
