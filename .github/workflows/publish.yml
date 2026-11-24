@@ -17,7 +17,41 @@ permissions:
   contents: write
   actions: read
 jobs:
+  macos-package-smoke:
+    runs-on: macos-15-intel
+    timeout-minutes: 50
+    env:
+      BUILD_RUN: ${{ inputs.build_run || '45438502769' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require successful package validation
+        run: gh run watch "$BUILD_RUN" --exit-status --interval 30
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ env.BUILD_RUN }}
+          name: winbox3-macos-x86_64
+          path: package
+      - name: Run packaged app through Cocoa
+        shell: bash
+        run: |
+          ditto -x -k package/winbox3-macos-x86_64.zip "$RUNNER_TEMP/winbox-package"
+          SDL_VIDEO_DRIVER=cocoa "$RUNNER_TEMP/winbox-package/WinBox Recom.app/Contents/MacOS/winbox3" --profile "$RUNNER_TEMP/winbox-profile" --smoke-ms 2000 --screenshot "$RUNNER_TEMP/winbox-cocoa.png" 2>&1 | tee cocoa.log
+          grep -q 'WinBox event loop ready' cocoa.log
+          ! grep -qE 'lift stopped|WinBox presentation failed' cocoa.log
+          test -s "$RUNNER_TEMP/winbox-cocoa.png"
+      - name: Report Cocoa failure
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('cocoa.log')
+          text = path.read_text(errors='replace')[-3500:] if path.exists() else 'Package build or extraction failed before Cocoa smoke.'
+          print('::error title=Cocoa package diagnostics::' + text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+          PY
   publish:
+    needs: macos-package-smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
