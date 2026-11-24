@@ -1,6 +1,7 @@
 name: Native packages
 on:
   push:
+    branches: [main]
     paths-ignore: [.github/workflows/publish.yml]
   workflow_dispatch:
 permissions:
@@ -25,7 +26,21 @@ jobs:
           name: winbox3-linux-amd64
           path: build/linux-static/dist/*
   macos:
-    runs-on: macos-15-intel
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-15-intel
+            sdk: macos-10.14-sdk-v2
+            app: macos-10.14-app-v1
+          - arch: arm64
+            runner: macos-15
+            sdk: macos-11.0-arm64-sdk-v1
+            app: macos-11.0-arm64-app-v1
+    runs-on: ${{ matrix.runner }}
+    env:
+      WINBOX_MACOS_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,13 +52,13 @@ jobs:
         id: sdk-cache
         with:
           path: build/macos-release/deps
-          key: macos-10.14-sdk-v2-${{ hashFiles('packaging/sources.json') }}
+          key: ${{ matrix.sdk }}-${{ hashFiles('packaging/sources.json') }}
       - uses: actions/cache/restore@v4
         id: app-cache
         with:
           path: build/macos-release/app-build
-          key: macos-10.14-app-v1-${{ github.sha }}
-          restore-keys: macos-10.14-app-v1-
+          key: ${{ matrix.app }}-${{ github.sha }}
+          restore-keys: ${{ matrix.app }}-
       - run: python3 tools/restore_source_mtimes.py
       - name: Build macOS package
         shell: bash
@@ -52,12 +67,12 @@ jobs:
         if: always() && steps.sdk-cache.outputs.cache-hit != 'true'
         with:
           path: build/macos-release/deps
-          key: macos-10.14-sdk-v2-${{ hashFiles('packaging/sources.json') }}
+          key: ${{ matrix.sdk }}-${{ hashFiles('packaging/sources.json') }}
       - uses: actions/cache/save@v4
         if: always() && steps.app-cache.outputs.cache-hit != 'true'
         with:
           path: build/macos-release/app-build
-          key: macos-10.14-app-v1-${{ github.sha }}
+          key: ${{ matrix.app }}-${{ github.sha }}
       - name: Build diagnostics
         if: always()
         run: |
@@ -73,26 +88,8 @@ jobs:
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: winbox3-macos-x86_64
+          name: winbox3-macos-${{ matrix.arch }}
           if-no-files-found: error
           path: |
             build/macos-release/dist/*.zip
             build/macos-release/dist/SHA256SUMS
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, macos]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          path: packages
-      - name: Publish packages
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir release-assets
-          cp packages/winbox3-linux-amd64/winbox3-linux-amd64 packages/winbox3-macos-x86_64/*.zip release-assets/
-          cp LICENSE NOTICE packaging/sources.json release-assets/
-          (cd release-assets; sha256sum winbox3-* > SHA256SUMS)
-          gh release create "$GITHUB_REF_NAME" release-assets/* --title "$GITHUB_REF_NAME" --generate-notes --prerelease
