@@ -149,6 +149,7 @@ static const char *profile_path(void) {
 #endif
     }mkdirs(path); }return path;
 }
+const char *host_profile_path(void) { return profile_path(); }
 static char *host_path(CPU *c,uint64_t address,char *buffer) {
     char *p=guest_string(c,address);if(!p) return NULL;size_t offset=0;
     if(isalpha((unsigned char)p[0]) && p[1]==':') { offset=(size_t)snprintf(buffer,PATH_MAX,"%s",profile_path());p+=2; }

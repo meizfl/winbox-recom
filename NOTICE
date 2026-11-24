@@ -3,3 +3,5 @@ The native compatibility runtime, translator and project tooling are distributed
 The input winbox64.v3.43p10.exe and its embedded resources are pre-existing third-party material, supplied for this reconstruction. They retain their original ownership and licensing; the project license does not relicense them. This project is unofficial and is not endorsed by MikroTik.
 
 No router profiles, credentials or proprietary system fonts are included. Third-party build dependencies retain their upstream licenses; their pinned source URLs and hashes are in packaging/sources.json.
+
+Wallpaper decoding uses stb_image by Sean Barrett and contributors (MIT or public domain); the upstream license is included in runtime/vendor/stb_image.h.

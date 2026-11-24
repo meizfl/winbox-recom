@@ -11,7 +11,7 @@ from png_pixels import read_png
 binary = Path(sys.argv[1]).resolve()
 with tempfile.TemporaryDirectory(prefix='winbox-gui-test-', dir=binary.parent) as folder:
     root = Path(folder)
-    env = dict(os.environ, SDL_VIDEO_DRIVER='dummy', WINBOX_TEST_INPUT='192.0.2.1',
+    env = dict(os.environ, SDL_VIDEO_DRIVER='dummy', WINBOX_THEME='light', WINBOX_TEST_INPUT='192.0.2.1',
                WINBOX_TEST_BACKSPACE='1', WINBOX_TEST_PASTE_INPUT='1', WINBOX_TEST_RESIZE='1', WINBOX_TEST_NEIGHBORS='1', WINBOX_TEST_CLOSE='1', WINBOX_PROFILE=str(root/'profile'))
     frames=root/'frames';frames.mkdir();env['WINBOX_TEST_FRAME_DIR']=str(frames)
     env.pop('WINBOX_TRACE', None)

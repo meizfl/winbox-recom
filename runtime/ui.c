@@ -8,6 +8,7 @@
 #include <limits.h>
 #include <time.h>
 #include <unistd.h>
+#include <errno.h>
 
 #define EDIT_PROC UINT64_C(0xe0000000)
 #define MAX_WINDOWS 2048
@@ -20,14 +21,14 @@ typedef struct { char *name;uint64_t proc,background,cursor;unsigned extra,style
 typedef struct { char *text;uint64_t submenu,data;uint32_t id,state,type; } MenuItem;
 typedef struct { MenuItem *items;size_t count; } Menu;
 typedef struct { int height,ascent,descent,internal,external,average,maximum; } FontMetrics;
-typedef struct { int used,type,metric_valid,cursor_shared;SDL_Cursor *cursor;FontMetrics metrics;uint32_t color;double width;int size,weight,font_width,pitch,charset,italic,underline,strike;char face[80];cairo_surface_t *surface;Menu menu; } Gdi;
-typedef struct { int used;uint64_t hwnd,proc,parent,native_parent,class_cursor,style,exstyle,menu,instance,userdata,extra[32];
+typedef struct { int used,type,metric_valid,cursor_shared;SDL_Cursor *cursor;FontMetrics metrics;uint32_t color;unsigned modern_icon;double width;int size,weight,font_width,pitch,charset,italic,underline,strike;char face[80];cairo_surface_t *surface;Menu menu; } Gdi;
+typedef struct { int used;uint64_t zorder,hwnd,proc,parent,native_parent,class_cursor,style,exstyle,menu,instance,userdata,extra[32];
     int x,y,w,h,visible,paint_pending,painting,resize_pending,selection_start,selection_end,destroying,frame_dirty,native_popup;unsigned class_style;uint32_t opening_buttons;uint64_t last_present;char *title,*class_name;SDL_Window *native;cairo_surface_t *surface,*frame;
 } Window;
 typedef struct DCState { uint64_t font,brush,pen,bitmap;uint32_t text,bg;int bgmode,x,y;cairo_t *cr;cairo_surface_t *surface;struct DCState *next; } DCState;
 typedef struct { int used;uint64_t window,font,brush,pen,bitmap;uint32_t text,bg;int bgmode,x,y,save_depth;
     cairo_t *cr;cairo_surface_t *surface;DCState *saved; } DC;
-typedef struct { uint64_t hwnd;int x,y,width,height;unsigned flags,changes; } DeferredPosition;
+typedef struct { uint64_t hwnd,after;int x,y,width,height;unsigned flags,changes; } DeferredPosition;
 typedef struct { uint64_t handle;int used;size_t count;DeferredPosition *positions; } DeferredBatch;
 static DeferredBatch deferred[128];
 static DeferredBatch *position_batch(uint64_t handle) { if(handle<0x78000000 || (handle-0x78000000)%16) return NULL;DeferredBatch *batch=&deferred[((handle-0x78000000)/16)%128];return batch->used && batch->handle==handle ? batch : NULL; }
@@ -61,6 +62,7 @@ static void message_input_state(const Message *message) {
 static unsigned mouse_key_flags(void) { unsigned flags=0;if(ui.input_buttons&SDL_BUTTON_LMASK) flags|=1;if(ui.input_buttons&SDL_BUTTON_RMASK) flags|=2;if(ui.input_buttons&SDL_BUTTON_MMASK) flags|=16;if(ui.input_buttons&SDL_BUTTON_X1MASK) flags|=32;if(ui.input_buttons&SDL_BUTTON_X2MASK) flags|=64;if(ui.event_modifiers&SDL_KMOD_SHIFT) flags|=4;if(ui.event_modifiers&SDL_KMOD_CTRL) flags|=8;return flags; }
 static void origin(Window *,int *,int *);
 static void request_present(Window *);
+static Window *native_root(Window *);
 static int menu_height(Window *);
 static void color(cairo_t *,uint32_t);
 static Window *window(uint64_t);
@@ -158,7 +160,11 @@ static char *iconv_latin(const char *to,const char *from,const char *input,size_
     }
     return out;
 }
-static int video(CPU *c) { if(ui.ready) return 1;
+#include "ui_theme.inc"
+#include "ui_wallpaper.inc"
+#include "ui_theme_cache.inc"
+#include "ui_icons.inc"
+static int video(CPU *c) { theme_init();if(ui.ready) return 1;
     const char *legacy_driver=getenv("SDL_VIDEODRIVER");if(legacy_driver && !getenv("SDL_VIDEO_DRIVER")) SDL_SetHint(SDL_HINT_VIDEO_DRIVER,legacy_driver);
     if(!SDL_InitSubSystem(SDL_INIT_VIDEO)) { trap(c,SDL_GetError());return 0; }ui.ready=1;ui.started=SDL_GetTicks();fprintf(stderr,"WinBox video backend: %s\n",SDL_GetCurrentVideoDriver());return 1; }
 static cairo_surface_t *surface(int w,int h) { if(w<1) w=1;if(h<1) h=1;if(w>8192 || h>8192) return NULL;cairo_surface_t *s=cairo_image_surface_create(CAIRO_FORMAT_ARGB32,w,h);cairo_t *cr=cairo_create(s);cairo_set_source_rgb(cr,.94,.94,.94);cairo_paint(cr);cairo_destroy(cr);return s; }
@@ -202,13 +208,94 @@ static uint64_t new_dc(uint64_t h,cairo_surface_t *s) { for(unsigned i=1;i<MAX_G
         if(!default_font) { default_font=new_gdi(3);Gdi *f=gdi(default_font);f->size=-11;f->weight=400;strcpy(f->face,"MS Shell Dlg");default_pen=new_gdi(2);gdi(default_pen)->width=1;default_brush=new_gdi(1);gdi(default_brush)->color=0xffffff;default_bitmap=new_gdi(4);gdi(default_bitmap)->surface=surface(1,1); }
         d->font=default_font;d->pen=default_pen;d->brush=default_brush;d->bitmap=default_bitmap;font(d);return 0x70000000+i*16; }return 0; }
 #include "ui_feedback.inc"
-static void composite(cairo_t *cr,Window *w,int x,int y) { cairo_save(cr);cairo_rectangle(cr,x,y,w->w,w->h);cairo_clip(cr);cairo_set_source_surface(cr,w->surface,x,y);cairo_paint(cr);for(unsigned i=1;i<MAX_WINDOWS;i++) { Window *child=&ui.windows[i];if(child->used && child->visible && !child->native && child->parent==w->hwnd) composite(cr,child,x+child->x,y+child->y); }cairo_restore(cr); }
-static void present(Window *w) { if(!w) return;while(!w->native && w->parent && window(w->parent)) w=window(w->parent);if(!w->native || !w->visible) return;
+static Window *hit(Window *,int *,int *);
+static uint64_t zserial=MAX_WINDOWS;
+static uint64_t window_z(Window *w) { return w->zorder ? w->zorder : (uint64_t)(w-ui.windows); }
+static int compare_window_z(const void *a,const void *b) { uint64_t x=window_z(*(Window *const *)a),y=window_z(*(Window *const *)b);return (x>y)-(x<y); }
+static unsigned child_order(Window *parent,Window **ordered) {
+    unsigned n=0;for(unsigned i=1;i<MAX_WINDOWS;i++) { Window *w=&ui.windows[i];if(w->used && !w->native && w->parent==parent->hwnd) ordered[n++]=w; }qsort(ordered,n,sizeof *ordered,compare_window_z);return n;
+}
+static int position_zorder(Window *w,uint64_t after,unsigned flags) {
+    if(!w || (flags&4)) return 0;
+    if(w->native) { if(after!=1 && !(flags&16)) SDL_RaiseWindow(w->native);return 0; }
+    Window *parent=window(w->parent);if(!parent) return 0;Window *ordered[MAX_WINDOWS];unsigned n=child_order(parent,ordered),old=n;
+    for(unsigned i=0;i<n;i++) if(ordered[i]==w) { old=i;memmove(ordered+i,ordered+i+1,(n-i-1)*sizeof *ordered);n--;break; }
+    if(old>n) return 0;unsigned at=n;
+    if(after==1) at=0;
+    else if(after && after!=UINT64_MAX && after!=UINT64_MAX-1) { if(after==w->hwnd) return 0;int found=0;for(unsigned i=0;i<n;i++) if(ordered[i]->hwnd==after) { at=i;found=1;break; }if(!found) return 0; }
+    memmove(ordered+at+1,ordered+at,(n-at)*sizeof *ordered);ordered[at]=w;
+    for(unsigned i=0;i<=n;i++) ordered[i]->zorder=++zserial;
+    if(at!=old) request_present(w);return at!=old;
+}
+static void raise_mdi(Window *w) {
+    for(Window *p=w;p && !p->native;p=window(p->parent)) if(p->title && *p->title && !strcmp(p->class_name,"routeros_dbl_canvas")) position_zorder(p,0,0);
+}
+static void composite(cairo_t *cr,Window *w,int x,int y) { cairo_save(cr);cairo_rectangle(cr,x,y,w->w,w->h);cairo_clip(cr);theme_init();cairo_surface_t *layer=w->surface;int temporary=0;if(theme.dark) { if(theme_cache_enabled) layer=theme_cached_layer(w);else layer=NULL;if(!layer) { layer=theme_copy_region(w->surface,0,0,w->w,w->h);theme_apply(layer,w);temporary=1; } }cairo_set_source_surface(cr,layer,x,y);cairo_paint(cr);if(temporary) cairo_surface_destroy(layer);wallpaper_paint(cr,w,x,y);Window *ordered[MAX_WINDOWS];unsigned count=child_order(w,ordered);for(unsigned i=0;i<count;i++) { Window *child=ordered[i];if(child->visible) composite(cr,child,x+child->x,y+child->y); }cairo_restore(cr); }
+#ifdef WINBOX_UI_TESTS
+/* Offline overlapping MDI fixture: style each backing surface before z-composition. */
+int ui_theme_composition_test(void) {
+    theme.initialized=1;theme.dark=1;
+    Window *root=&ui.windows[1],*back=&ui.windows[2],*front=&ui.windows[3];
+    *root=(Window){.used=1,.hwnd=WH(1),.w=320,.h=240,.class_name="fixture",.title="",.surface=surface(320,240)};
+    *back=(Window){.used=1,.visible=1,.hwnd=WH(2),.parent=WH(1),.x=80,.y=60,.w=200,.h=150,.class_name="routeros_dbl_canvas",.title="Interfaces",.surface=surface(200,150)};
+    *front=(Window){.used=1,.visible=1,.hwnd=WH(3),.parent=WH(1),.x=20,.y=20,.w=220,.h=180,.class_name="routeros_dbl_canvas",.title="Terminal <1>",.surface=surface(220,180)};
+    for(unsigned i=1;i<=3;i++) { Window *w=&ui.windows[i];cairo_t *c=cairo_create(w->surface);cairo_set_source_rgb(c,1,1,1);cairo_paint(c);if(i>1) { cairo_set_source_rgb(c,.3,.3,.8);cairo_rectangle(c,2,2,w->w-4,18);cairo_fill(c); }cairo_destroy(c); }
+    cairo_surface_t *image=surface(320,240);cairo_t *cr=cairo_create(image);composite(cr,root,0,0);cairo_destroy(cr);cairo_surface_flush(image);
+    unsigned char *data=cairo_image_surface_get_data(image);int stride=cairo_image_surface_get_stride(image),ok=1;
+    for(int y=45;y<195;y++) for(int x=25;x<235;x++) { uint32_t pixel;memcpy(&pixel,data+y*stride+x*4,4);if(pixel!=theme_pixel(0xffffffff)) ok=0; }
+    /* Moving the foreground must reveal the background's original blue caption. */
+    front->x=0;front->y=120;cr=cairo_create(image);composite(cr,root,0,0);cairo_destroy(cr);cairo_surface_flush(image);uint32_t pixel;memcpy(&pixel,data+65*stride+100*4,4);if(!theme_blue(pixel)) ok=0;
+    cairo_surface_flush(front->surface);memcpy(&pixel,cairo_image_surface_get_data(front->surface)+40*cairo_image_surface_get_stride(front->surface)+40*4,4);if(pixel!=0xffffffff) ok=0;
+    uint64_t builds=theme_cache_builds;cr=cairo_create(image);composite(cr,root,0,0);cairo_destroy(cr);if(theme_cache_builds!=builds) ok=0;
+    cairo_t *persistent=cairo_create(back->surface);cairo_set_source_rgb(persistent,0,0,0);cairo_rectangle(persistent,40,80,10,10);cairo_fill(persistent);
+    cr=cairo_create(image);composite(cr,root,0,0);cairo_destroy(cr);if(theme_cache_builds!=builds+1) ok=0;
+    cairo_set_source_rgb(persistent,1,1,1);cairo_rectangle(persistent,40,80,10,10);cairo_fill(persistent);cairo_destroy(persistent);
+    cr=cairo_create(image);composite(cr,root,0,0);cairo_destroy(cr);if(theme_cache_builds!=builds+2) ok=0;
+    int hx=100,hy=130;if(hit(root,&hx,&hy)!=front) ok=0;
+    position_zorder(back,0,4);hx=100;hy=130;if(hit(root,&hx,&hy)!=front) ok=0;
+    raise_mdi(back);hx=100;hy=130;if(hit(root,&hx,&hy)!=back) ok=0;
+    cr=cairo_create(image);composite(cr,root,0,0);cairo_destroy(cr);cairo_surface_flush(image);memcpy(&pixel,data+125*stride+100*4,4);if(pixel!=theme_pixel(0xffffffff)) ok=0;
+    position_zorder(back,1,0);hx=100;hy=130;if(hit(root,&hx,&hy)!=front) ok=0;
+    position_zorder(front,back->hwnd,0);hx=100;hy=130;if(hit(root,&hx,&hy)!=back) ok=0;
+    cairo_surface_destroy(image);for(unsigned i=1;i<=3;i++) { cairo_surface_destroy(ui.windows[i].surface);memset(&ui.windows[i],0,sizeof(Window)); }return ok;
+}
+int ui_wallpaper_composition_test(const char *path) {
+    if(!wallpaper_set(path)) return 0;theme.initialized=1;theme.dark=1;
+    Window *root=&ui.windows[1],*workspace=&ui.windows[2],*front=&ui.windows[3];
+    *root=(Window){.used=1,.hwnd=WH(1),.w=240,.h=160,.class_name="routeros_main",.title="",.surface=surface(240,160)};
+    *workspace=(Window){.used=1,.visible=1,.hwnd=WH(2),.parent=WH(1),.x=40,.y=20,.w=200,.h=140,.class_name="routeros_dbl_canvas",.title="",.surface=surface(200,140)};
+    *front=(Window){.used=1,.visible=1,.hwnd=WH(3),.parent=WH(2),.x=60,.y=40,.w=80,.h=60,.class_name="routeros_dbl_canvas",.title="Interfaces",.surface=surface(80,60)};
+    cairo_t *fill=cairo_create(front->surface);cairo_set_source_rgb(fill,1,1,1);cairo_paint(fill);cairo_destroy(fill);
+    cairo_surface_t *image=surface(240,160);cairo_t *cr=cairo_create(image);composite(cr,root,0,0);cairo_destroy(cr);cairo_surface_flush(image);unsigned char *data=cairo_image_surface_get_data(image);int stride=cairo_image_surface_get_stride(image);uint32_t background,client,sidebar;memcpy(&background,data+40*stride+60*4,4);memcpy(&client,data+100*stride+130*4,4);memcpy(&sidebar,data+40*stride+20*4,4);
+    int ok=background==0xff2c58a6 && client==theme_pixel(0xffffffff) && sidebar!=background;
+    theme.dark=0;cr=cairo_create(image);composite(cr,root,0,0);cairo_destroy(cr);cairo_surface_flush(image);memcpy(&client,data+40*stride+60*4,4);if(client!=background) ok=0;
+    /* Force a fresh load, as on restart; invalid selections preserve this image. */
+    cairo_surface_destroy(wallpaper.image);wallpaper.image=NULL;wallpaper.initialized=0;wallpaper_init();if(!wallpaper.image || wallpaper_set("/nonexistent/wallpaper.jpg")) ok=0;
+    if(!wallpaper_set(NULL) || wallpaper.image) ok=0;
+    cairo_surface_destroy(image);for(unsigned i=1;i<=3;i++) { cairo_surface_destroy(ui.windows[i].surface);memset(&ui.windows[i],0,sizeof(Window)); }return ok;
+}
+int ui_drag_render_benchmark(void) {
+    theme.initialized=1;theme.dark=1;Window *root=&ui.windows[1],*panel=&ui.windows[2];
+    *root=(Window){.used=1,.hwnd=WH(1),.w=1280,.h=900,.class_name="fixture",.title="",.surface=surface(1280,900)};
+    *panel=(Window){.used=1,.visible=1,.hwnd=WH(2),.parent=WH(1),.x=120,.y=80,.w=900,.h=700,.class_name="routeros_dbl_canvas",.title="Fields",.surface=surface(900,700)};
+    for(unsigned i=3;i<203;i++) { Window *w=&ui.windows[i];*w=(Window){.used=1,.visible=1,.hwnd=WH(i),.parent=WH(2),.x=8+(int)((i-3)%4)*220,.y=24+(int)((i-3)/4)*13,.w=210,.h=12,.class_name="EDIT",.title="",.surface=surface(210,12)}; }
+    cairo_surface_t *frame=surface(1280,900);double elapsed[2];uint64_t hashes[2],builds=0;
+    for(int mode=0;mode<2;mode++) { theme_cache_enabled=mode;cairo_t *cr=cairo_create(frame);composite(cr,root,0,0);cairo_destroy(cr);if(mode) builds=theme_cache_builds;
+        uint64_t start=SDL_GetPerformanceCounter();for(unsigned i=0;i<40;i++) { panel->x=120+i%30;panel->y=80+i%20;cr=cairo_create(frame);composite(cr,root,0,0);cairo_destroy(cr); }elapsed[mode]=(SDL_GetPerformanceCounter()-start)*1000./SDL_GetPerformanceFrequency()/40;hashes[mode]=theme_surface_hash(frame);
+    }
+    int ok=hashes[0]==hashes[1] && builds==theme_cache_builds;
+    fprintf(stderr,"200-field drag renderer: %.2f ms/frame before, %.2f ms/frame cached (%.1fx); unchanged layers rebuilt: %llu\n",elapsed[0],elapsed[1],elapsed[0]/elapsed[1],(unsigned long long)(theme_cache_builds-builds));
+    theme_cache_enabled=1;cairo_surface_destroy(frame);for(unsigned i=1;i<203;i++) { cairo_surface_destroy(ui.windows[i].surface);memset(&ui.windows[i],0,sizeof(Window)); }return ok;
+}
+#endif
+static void present(Window *w) { if(!w) return;while(!w->native && w->parent && window(w->parent)) w=window(w->parent);if(!w->native || !w->visible) return;uint64_t frame_started=SDL_GetTicks();
     if(frame_unready(w)) { w->last_present=SDL_GetTicks();if(w->frame) upload_frame(w,w->frame);return; }
     if(!w->frame || cairo_image_surface_get_width(w->frame)!=w->w || cairo_image_surface_get_height(w->frame)!=w->h) { if(w->frame) cairo_surface_destroy(w->frame);w->frame=surface(w->w,w->h); }
-    cairo_surface_t *s=w->frame;if(!s) return;cairo_t *cr=cairo_create(s);int bar=menu_height(w);if(bar) { color(cr,0xdcdcdc);cairo_paint(cr); }composite(cr,w,0,bar);if(bar) { cairo_save(cr);cairo_rectangle(cr,0,0,w->w,bar);cairo_clip(cr);color(cr,0xdcdcdc);cairo_paint(cr);menubar_item(w,cr,-1);cairo_restore(cr); }paint_caret(cr,w);cairo_destroy(cr);cairo_surface_flush(s);w->resize_pending=0;w->frame_dirty=0;w->last_present=SDL_GetTicks();
+    cairo_surface_t *s=w->frame;if(!s) return;cairo_t *cr=cairo_create(s);int bar=menu_height(w);if(bar) { color(cr,0xdcdcdc);cairo_paint(cr); }composite(cr,w,0,bar);if(bar) { cairo_surface_t *menu=surface(w->w,bar);cairo_t *mc=cairo_create(menu);color(mc,0xdcdcdc);cairo_paint(mc);menubar_item(w,mc,-1);cairo_destroy(mc);theme_apply(menu,NULL);cairo_set_source_surface(cr,menu,0,0);cairo_paint(cr);cairo_surface_destroy(menu); }theme_control_paint(cr,w);paint_caret(cr,w);cairo_destroy(cr);cairo_surface_flush(s);w->resize_pending=0;w->frame_dirty=0;w->last_present=frame_started;
     if(!upload_frame(w,s)) w->frame_dirty=1;
+    if(getenv("WINBOX_TRACE_FRAMES")) fprintf(stderr,"WinBox frame: %llu ms\n",(unsigned long long)(SDL_GetTicks()-frame_started));
     const char *frames=getenv("WINBOX_TEST_FRAME_DIR");if(frames && !strcmp(w->class_name,"routeros_connect")) { static unsigned serial;char path[4096];snprintf(path,sizeof path,"%s/frame-%04u.png",frames,serial++);cairo_surface_write_to_png(s,path); }
+    if(ui.capture_screenshot && getenv("WINBOX_TEST_WINDOW_TREE")) for(unsigned i=1;i<MAX_WINDOWS;i++) { Window *p=&ui.windows[i];if(p->used && p->visible) fprintf(stderr,"TREE %llx parent=%llx %s %d,%d %dx%d title=%s\n",(unsigned long long)p->hwnd,(unsigned long long)p->parent,p->class_name,p->x,p->y,p->w,p->h,p->title); }
     const char *shot=getenv("WINBOX_SCREENSHOT");if(shot && ui.capture_screenshot && w->visible) cairo_surface_write_to_png(s,shot);
 }
 static void request_present(Window *w) { if(!w) return;while(!w->native && w->parent && window(w->parent)) w=window(w->parent);if(w->native) w->frame_dirty=1; }
@@ -259,7 +346,7 @@ static void menu_info(CPU *c,MenuItem *item,uint64_t info) {
 }
 static uint32_t popup_menu(CPU *c,uint64_t handle,uint64_t owner,int x,int y,unsigned depth,SDL_Window *parent_native,int parent_x,int parent_y) {
     Menu *m=menu(handle);if(getenv("WINBOX_TEST_MENU_SELECT")) fprintf(stderr,"WinBox smoke popup requested: %zu items\n",m ? m->count : 0);if(!m || !m->count || depth>16 || !video(c)) return 0;
-    invoke(c,window(owner),0x117,handle,0); /* WM_INITMENUPOPUP may update labels/state. */
+    invoke(c,window(owner),0x117,handle,0);wallpaper_settings(handle); /* WM_INITMENUPOPUP may update labels/state. */
     int width=140,height=0;size_t count=m->count;
     cairo_surface_t *measure=surface(1,1);cairo_t *cr=cairo_create(measure);cairo_select_font_face(cr,"Tahoma",0,0);cairo_set_font_size(cr,11);
     for(size_t i=0;i<count;i++) { char *label=menu_label(m->items[i].text);const char *tab=m->items[i].text ? strchr(m->items[i].text,'\t') : NULL;cairo_text_extents_t ext,shortcut;cairo_text_extents(cr,label ? label : "",&ext);cairo_text_extents(cr,tab ? tab+1 : "",&shortcut);free(label);double needed=ext.x_advance+shortcut.x_advance+(tab ? 32 : 0)+48;if(needed>width) width=needed;height+=(m->items[i].type&0x800) ? 8 : 20; }
@@ -267,7 +354,8 @@ static uint32_t popup_menu(CPU *c,uint64_t handle,uint64_t owner,int x,int y,uns
     SDL_Rect bounds;if(SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(),&bounds)) { if(x+width>bounds.x+bounds.w) x=bounds.x+bounds.w-width;if(y+height>bounds.y+bounds.h) y=bounds.y+bounds.h-height;if(y<bounds.y) y=bounds.y; }
     Window *popup_owner=window(owner);while(popup_owner && !popup_owner->native) popup_owner=window(popup_owner->parent);SDL_Window *native=NULL;if(parent_native && popup_backend()) native=SDL_CreatePopupWindow(parent_native,x-parent_x,y-parent_y,width,height,SDL_WINDOW_POPUP_MENU);else if(popup_owner && popup_backend()) { int px,py;origin(popup_owner,&px,&py);native=SDL_CreatePopupWindow(popup_owner->native,x-px,y-py+menu_height(popup_owner),width,height,SDL_WINDOW_POPUP_MENU); }else native=create_toplevel("WinBox menu",x,y,width,height,SDL_WINDOW_BORDERLESS|SDL_WINDOW_ALWAYS_ON_TOP,NULL);if(!native) return 0;
     cairo_surface_t *canvas=surface(width,height);cr=cairo_create(canvas);int selected=-1,done=0;uint32_t command=0;uint32_t opening_buttons=ui.input_buttons;int pressed=-1;
-    const char *choice=getenv("WINBOX_TEST_MENU_SELECT");if(choice) {
+    const char *choice=getenv("WINBOX_TEST_MENU_SELECT");char choice_part[256];if(choice) { const char *part=choice;for(unsigned level=0;level<depth;level++) { const char *next=strchr(part,'/');if(!next) break;part=next+1; }size_t length=strcspn(part,"/");if(length>=sizeof choice_part) length=sizeof choice_part-1;memcpy(choice_part,part,length);choice_part[length]=0;choice=choice_part; }
+    if(choice) {
         int steps=0,found=0;for(size_t i=0;i<count;i++) { MenuItem *item=&m->items[i];if(item->type&0x800 || item->state&3) continue;steps++;char label[256];size_t n=0;for(const char *p=item->text ? item->text : "";*p && *p!='\t' && n<255;p++) if(*p!='&') label[n++]=*p;label[n]=0;if(!strcmp(label,choice)) { found=1;break; } }
         const char *method=getenv("WINBOX_TEST_MENU_METHOD");if(found && method && !strcmp(method,"mouse")) { int item_y=0,left=steps;for(size_t i=0;i<count;i++) { MenuItem *item=&m->items[i];int row=item->type&0x800 ? 8 : 20;if(!(item->type&0x800) && !(item->state&3) && !--left) { item_y+=row/2;break; }item_y+=row; }
             SDL_Event click={0};click.type=SDL_EVENT_MOUSE_BUTTON_UP;click.button.button=SDL_BUTTON_LEFT;click.button.windowID=popup_owner ? SDL_GetWindowID(popup_owner->native) : 0;SDL_PushEvent(&click);click.type=SDL_EVENT_MOUSE_BUTTON_DOWN;click.button.windowID=SDL_GetWindowID(native);click.button.x=30;click.button.y=item_y;SDL_PushEvent(&click);click.type=SDL_EVENT_MOUSE_BUTTON_UP;SDL_PushEvent(&click);
@@ -289,6 +377,7 @@ static uint32_t popup_menu(CPU *c,uint64_t handle,uint64_t owner,int x,int y,uns
                 if(item->state&8) { cairo_set_line_width(cr,1.5);cairo_move_to(cr,7,top+10);cairo_line_to(cr,10,top+13);cairo_line_to(cr,15,top+7);cairo_stroke(cr); }if(item->submenu) { cairo_move_to(cr,width-16,top+14);cairo_show_text(cr,">"); }
             }top+=row;
         }
+        theme_apply(canvas,NULL);
         const char *menu_shot=getenv("WINBOX_TEST_MENU_SCREENSHOT");if(menu_shot) cairo_surface_write_to_png(canvas,menu_shot);cairo_surface_flush(canvas);SDL_Surface *source=SDL_CreateSurfaceFrom(width,height,SDL_PIXELFORMAT_ARGB8888,cairo_image_surface_get_data(canvas),cairo_image_surface_get_stride(canvas));
         if(source) { SDL_BlitSurface(source,NULL,SDL_GetWindowSurface(native),NULL);SDL_DestroySurface(source);SDL_UpdateWindowSurface(native); }
         SDL_Event event;extern unsigned vm_release(CPU *);extern void vm_restore(CPU *,unsigned);unsigned locks=vm_release(c);int received=SDL_WaitEventTimeout(&event,100);vm_restore(c,locks);if(!received) continue;input_event_state(&event);ui.message_modifiers=ui.event_modifiers;ui.message_buttons=ui.input_buttons;ui.input_state=1;
@@ -313,7 +402,7 @@ static uint32_t popup_menu(CPU *c,uint64_t handle,uint64_t owner,int x,int y,uns
 }
 static uint32_t lparam(int x,int y) { return (uint16_t)x|((uint32_t)(uint16_t)y<<16); }
 static void origin(Window *w,int *x,int *y) { *x=*y=0;while(w) { if(w->native) { int a=0,b=0;if(w->native_popup) { SDL_GetWindowPosition(w->native,&a,&b);int px,py;origin(window(w->native_parent),&px,&py);a+=px;b+=py-menu_height(window(w->native_parent)); }else if(!local_coordinates()) SDL_GetWindowPosition(w->native,&a,&b);*x+=a;*y+=b+menu_height(w);break; }*x+=w->x;*y+=w->y;w=window(w->parent); } }
-static Window *hit(Window *root,int *x,int *y) { for(int i=MAX_WINDOWS-1;i>0;i--) { Window *w=&ui.windows[i];if(w->used && w->visible && !w->native && w->parent==root->hwnd && *x>=w->x && *y>=w->y && *x<w->x+w->w && *y<w->y+w->h) { *x-=w->x;*y-=w->y;return hit(w,x,y); } }return root; }
+static Window *hit(Window *root,int *x,int *y) { Window *ordered[MAX_WINDOWS];unsigned count=child_order(root,ordered);while(count) { Window *w=ordered[--count];if(w->visible && *x>=w->x && *y>=w->y && *x<w->x+w->w && *y<w->y+w->h) { *x-=w->x;*y-=w->y;return hit(w,x,y); } }return root; }
 void ui_post(uint64_t h,uint32_t msg,uint64_t wp,uint64_t lp) { enqueue(h,msg,wp,lp); }
 static int pump(CPU *c,int wait) {
     extern void network_pump(void);network_pump();
@@ -326,6 +415,20 @@ static int pump(CPU *c,int wait) {
     static int backspace_stage;
     if(input && getenv("WINBOX_TEST_BACKSPACE") && now-ui.idle_started>1800 && input_stage==2 && !backspace_stage) { Window *target=window(ui.focus);while(target && !target->native) target=window(target->parent);if(target && target->native) { SDL_Event key;memset(&key,0,sizeof key);key.type=SDL_EVENT_KEY_DOWN;key.key.windowID=SDL_GetWindowID(target->native);key.key.key=SDLK_BACKSPACE;key.key.scancode=SDL_SCANCODE_BACKSPACE;SDL_PushEvent(&key);key.type=SDL_EVENT_KEY_UP;SDL_PushEvent(&key);backspace_stage=1; } }
     if(input && now-ui.idle_started>2000 && input_stage==2 && ui.focus) { enqueue(ui.focus,0x100,9,1);enqueue(ui.focus,0x101,9,1);input_stage=3; }
+    static int theme_menu_test_stage;
+    if((getenv("WINBOX_TEST_THEME_MENU") || getenv("WINBOX_TEST_SETTINGS_MENU")) && now-ui.idle_started>1600 && !theme_menu_test_stage) {
+        for(unsigned i=1;i<MAX_WINDOWS;i++) { Window *root=&ui.windows[i];Gdi *bar=root->used ? gdi(root->menu) : NULL;
+            if(root->visible && root->native && bar && bar->type==5 && bar->menu.count && bar->menu.items[0].submenu && (!getenv("WINBOX_TEST_SETTINGS_MENU") || !strcmp(root->class_name,"routeros_main"))) {
+                theme_menu_test_stage=1;int x,y;origin(root,&x,&y);unsigned selected=getenv("WINBOX_TEST_SETTINGS_MENU") && bar->menu.count>1 ? 1 : 0;uint32_t command=popup_menu(c,bar->menu.items[selected].submenu,root->hwnd,x,y,0,NULL,0,0);wallpaper_command(c,root,command);break;
+            }
+        }
+    }
+    static int theme_test_stage;
+    if(getenv("WINBOX_TEST_THEME_TOGGLE") && now-ui.idle_started>1400 && !theme_test_stage) {
+        for(unsigned i=1;i<MAX_WINDOWS;i++) { Window *root=&ui.windows[i];if(root->used && root->visible && theme_control(root,root->w-40,8)) {
+            SDL_Event event={0};event.type=SDL_EVENT_MOUSE_BUTTON_DOWN;event.button.windowID=SDL_GetWindowID(root->native);event.button.button=SDL_BUTTON_LEFT;event.button.x=root->w-40;event.button.y=8;SDL_PushEvent(&event);event.type=SDL_EVENT_MOUSE_BUTTON_UP;SDL_PushEvent(&event);theme_test_stage=1;break;
+        } }
+    }
     static int password_stage;
     const char *password_file=getenv("WINBOX_TEST_PASSWORD_FILE");
     if(password_file && now-ui.idle_started>2200 && !password_stage) { for(unsigned i=1;i<MAX_WINDOWS;i++) if(ui.windows[i].used && ui.windows[i].visible && ui.windows[i].native && !strcmp(ui.windows[i].class_name,"routeros_connect")) { SDL_Event e;memset(&e,0,sizeof e);e.type=SDL_EVENT_MOUSE_BUTTON_DOWN;e.button.windowID=SDL_GetWindowID(ui.windows[i].native);e.button.button=SDL_BUTTON_LEFT;e.button.x=150;e.button.y=79+menu_height(&ui.windows[i]);SDL_PushEvent(&e);e.type=SDL_EVENT_MOUSE_BUTTON_UP;SDL_PushEvent(&e);password_stage=1;break; } }
@@ -339,6 +442,16 @@ static int pump(CPU *c,int wait) {
             if(!main_seen) { main_seen=now;const char *size=getenv("WINBOX_TEST_MAIN_RESIZE");if(size) { int width=960,height=720;if(strcmp(size,"1")) sscanf(size,"%dx%d",&width,&height);if(width>0 && height>0 && width<=8192 && height<=8192) SDL_SetWindowSize(ui.windows[i].native,width,height); } }
             if(now-main_seen>1000) { SDL_Event e;memset(&e,0,sizeof e);e.type=SDL_EVENT_MOUSE_BUTTON_DOWN;e.button.windowID=SDL_GetWindowID(ui.windows[i].native);e.button.button=SDL_BUTTON_LEFT;const char *section=getenv("WINBOX_TEST_MAIN_SECTION");const char *sections[]={"Quick Set","WiFi","User Manager","Wireless","Interfaces","WireGuard","Bridge","PPP","Switch","Mesh","IP","IPv6","OpenFlow","MPLS","Routing","System","Queues","Files","Log","RADIUS","Tools","Terminal","IoT","TR069","Dot1X","Dude","Make Supout.rif","Container","App","New WinBox","Exit"};int row_index=4;if(section) { row_index=-1;for(unsigned j=0;j<sizeof sections/sizeof *sections;j++) if(!strcmp(section,sections[j])) { row_index=j;break; }if(row_index<0) break; }int row=menu_height(&ui.windows[i])+44+20*row_index;e.button.x=65;e.button.y=row;SDL_WarpMouseInWindow(ui.windows[i].native,65,row);SDL_Event motion={0};motion.type=SDL_EVENT_MOUSE_MOTION;motion.motion.windowID=e.button.windowID;motion.motion.x=65;motion.motion.y=row;SDL_PushEvent(&motion);SDL_PushEvent(&e);e.type=SDL_EVENT_MOUSE_BUTTON_UP;SDL_PushEvent(&e);main_test_stage=1;fprintf(stderr,"WinBox smoke opening %s at %d (read only)\n",section ? section : "Interfaces",row); }break;
         }
+    }
+    static int second_section_opened;
+    if(getenv("WINBOX_TEST_MAIN_READONLY") && getenv("WINBOX_TEST_MAIN_TERMINAL") && main_seen && main_test_stage && !second_section_opened && now-main_seen>4500) {
+        for(unsigned i=1;i<MAX_WINDOWS;i++) if(ui.windows[i].used && ui.windows[i].native && !strcmp(ui.windows[i].class_name,"routeros_main")) {
+            SDL_Event e={0};e.type=SDL_EVENT_MOUSE_BUTTON_DOWN;e.button.windowID=SDL_GetWindowID(ui.windows[i].native);e.button.button=SDL_BUTTON_LEFT;e.button.x=65;e.button.y=menu_height(&ui.windows[i])+44+20*21;SDL_PushEvent(&e);e.type=SDL_EVENT_MOUSE_BUTTON_UP;SDL_PushEvent(&e);second_section_opened=1;fprintf(stderr,"WinBox smoke opening Terminal above Interfaces (read only)\n");break;
+        }
+    }
+    static int reactivated;
+    if(getenv("WINBOX_TEST_MAIN_REACTIVATE") && second_section_opened && !reactivated && now-main_seen>8000) {
+        for(unsigned i=1;i<MAX_WINDOWS;i++) { Window *child=&ui.windows[i];if(!child->used || !child->visible || !child->title || strcmp(child->title,"Interfaces")) continue;Window *root=native_root(child);if(!root || !root->native) continue;int x,y,rx,ry;origin(child,&x,&y);origin(root,&rx,&ry);SDL_Event e={0};e.type=SDL_EVENT_MOUSE_BUTTON_DOWN;e.button.windowID=SDL_GetWindowID(root->native);e.button.button=SDL_BUTTON_LEFT;e.button.x=x-rx+20;e.button.y=y-ry+menu_height(root)+10;SDL_PushEvent(&e);e.type=SDL_EVENT_MOUSE_BUTTON_UP;SDL_PushEvent(&e);reactivated=1;break; }
     }
     if(getenv("WINBOX_TEST_MAIN_DRAG") && main_seen && main_test_stage>=1 && main_test_stage<4) {
         for(unsigned i=1;i<MAX_WINDOWS;i++) if(ui.windows[i].used && ui.windows[i].native && !strcmp(ui.windows[i].class_name,"routeros_main")) {
@@ -367,6 +480,7 @@ static int pump(CPU *c,int wait) {
     static int neighbor_stage;if(getenv("WINBOX_TEST_NEIGHBORS") && now-ui.idle_started>3000 && !neighbor_stage) { for(unsigned i=1;i<MAX_WINDOWS;i++) if(ui.windows[i].used && ui.windows[i].visible && ui.windows[i].native && !strcmp(ui.windows[i].class_name,"routeros_connect")) { SDL_Event e;memset(&e,0,sizeof e);e.type=SDL_EVENT_MOUSE_BUTTON_DOWN;e.button.windowID=SDL_GetWindowID(ui.windows[i].native);e.button.button=SDL_BUTTON_LEFT;e.button.x=105;e.button.y=207+menu_height(&ui.windows[i]);SDL_PushEvent(&e);e.type=SDL_EVENT_MOUSE_BUTTON_UP;SDL_PushEvent(&e);neighbor_stage=1;break; } }
     static int close_stage;if(getenv("WINBOX_TEST_CLOSE") && now-ui.idle_started>3500 && !close_stage) { for(unsigned i=1;i<MAX_WINDOWS;i++) if(ui.windows[i].used && ui.windows[i].visible && ui.windows[i].native && !strcmp(ui.windows[i].class_name,"routeros_connect")) { ui.capture_screenshot=1;present(&ui.windows[i]);if(ui.test_input_observed) fprintf(stderr,"WinBox smoke input verified\n");fprintf(stderr,"WinBox smoke close requested\n");enqueue(ui.windows[i].hwnd,0x10,0,0);close_stage=1;break; } }
     flush_frames();SDL_Event e;extern unsigned vm_release(CPU *);extern void vm_restore(CPU *,unsigned);unsigned depth=vm_release(c);int received=wait ? SDL_WaitEventTimeout(&e,8) : SDL_PollEvent(&e);vm_restore(c,depth);if(!received) return 1;
+    if(e.type==SDL_EVENT_MOUSE_MOTION) for(unsigned i=0;i<128;i++) { SDL_Event next;if(SDL_PeepEvents(&next,1,SDL_PEEKEVENT,SDL_EVENT_FIRST,SDL_EVENT_LAST)!=1 || next.type!=SDL_EVENT_MOUSE_MOTION || next.motion.windowID!=e.motion.windowID || next.motion.state!=e.motion.state) break;if(SDL_PeepEvents(&next,1,SDL_GETEVENT,SDL_EVENT_FIRST,SDL_EVENT_LAST)!=1) break;e=next; }
     if(e.type==SDL_EVENT_MOUSE_MOTION) { SDL_Event next;for(unsigned i=0;i<1024;i++) { if(SDL_PeepEvents(&next,1,SDL_PEEKEVENT,SDL_EVENT_FIRST,SDL_EVENT_LAST)!=1 || next.type!=SDL_EVENT_MOUSE_MOTION || next.motion.windowID!=e.motion.windowID) break;SDL_PeepEvents(&e,1,SDL_GETEVENT,SDL_EVENT_FIRST,SDL_EVENT_LAST); } }
     input_event_state(&e);Window *w=NULL;for(unsigned i=1;i<MAX_WINDOWS;i++) if(ui.windows[i].used && ui.windows[i].native && SDL_GetWindowID(ui.windows[i].native)==e.window.windowID) { w=&ui.windows[i];break; }
     if(e.type==SDL_EVENT_QUIT) { ui.quit=1;return 0; }if(!w) return 1;
@@ -376,16 +490,29 @@ static int pump(CPU *c,int wait) {
         if(e.type==SDL_EVENT_WINDOW_EXPOSED) enqueue(w->hwnd,0xf,0,0);
         if(e.type==SDL_EVENT_WINDOW_CLOSE_REQUESTED) enqueue(w->hwnd,0x10,0,0);
         if(e.type==SDL_EVENT_WINDOW_HIDDEN && w->native_popup && w->visible && (SDL_GetWindowFlags(w->native)&SDL_WINDOW_HIDDEN)) { w->visible=0;enqueue(w->hwnd,8,w->native_parent,0);enqueue(w->hwnd,0x10,0,0); }
+        if(e.type==SDL_EVENT_WINDOW_MOUSE_LEAVE && theme.hover==w->hwnd) { theme.hover=0;request_present(w); }
+        if(e.type==SDL_EVENT_WINDOW_FOCUS_LOST && theme.pressed==w->hwnd) { theme.pressed=0;request_present(w); }
         if(e.type==SDL_EVENT_WINDOW_FOCUS_LOST) { Window *focused=window(ui.focus),*root=focused;while(root && !root->native && window(root->parent)) root=window(root->parent);Window *next=NULL;SDL_Window *keyboard=SDL_GetKeyboardFocus();for(unsigned i=1;i<MAX_WINDOWS;i++) if(keyboard && ui.windows[i].used && ui.windows[i].native==keyboard) { next=&ui.windows[i];break; }if(focused && root==w && (!next || coordinate_space(next)!=coordinate_space(root))) enqueue(focused->hwnd,8,next ? next->hwnd : 0,0); }
         if(e.type==SDL_EVENT_WINDOW_FOCUS_GAINED) { ui.active=coordinate_space(w);Window *focused=window(ui.focus),*root=focused;while(root && !root->native && root->parent && window(root->parent)) root=window(root->parent);if(!focused || (root!=w && coordinate_space(root)!=coordinate_space(w))) { ui.focus=w->hwnd;enqueue(w->hwnd,7,0,0); } }
     } else if(e.type==SDL_EVENT_MOUSE_MOTION || e.type==SDL_EVENT_MOUSE_BUTTON_DOWN || e.type==SDL_EVENT_MOUSE_BUTTON_UP) {
         int x=e.type==SDL_EVENT_MOUSE_MOTION ? e.motion.x : e.button.x,y=e.type==SDL_EVENT_MOUSE_MOTION ? e.motion.y : e.button.y;int gx,gy;origin(w,&gx,&gy);gy-=menu_height(w);
-        if(!ui.capture && y<menu_height(w)) { if(e.type==SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button==SDL_BUTTON_LEFT) { cairo_t *cr=cairo_create(w->surface);int index=menubar_item(w,cr,x);cairo_destroy(cr);Gdi *g=gdi(w->menu);if(index>=0 && g) { MenuItem item=g->menu.items[index];if(!(item.state&3)) { uint32_t command=item.submenu ? popup_menu(c,item.submenu,w->hwnd,gx+x,gy+menu_height(w),0,NULL,0,0) : item.id;if(command) enqueue(w->hwnd,0x111,command,0); } } }return 1; }
+        int over_theme=!ui.capture && theme_control(w,x,y);
+        uint64_t hover=over_theme ? w->hwnd : 0;
+        if(theme.hover!=hover) { request_present(window(theme.hover));theme.hover=hover;request_present(w); }
+        if(over_theme) {
+            if(e.type==SDL_EVENT_MOUSE_MOTION) change_cursor(c,system_cursor(c,32649));
+            if(e.type==SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button==SDL_BUTTON_LEFT) { theme.pressed=w->hwnd;request_present(w); }
+            if(e.type==SDL_EVENT_MOUSE_BUTTON_UP && e.button.button==SDL_BUTTON_LEFT) { int activate=theme.pressed==w->hwnd;theme.pressed=0;if(activate) theme_toggle();request_present(w); }
+            return 1;
+        }
+        if(e.type==SDL_EVENT_MOUSE_BUTTON_UP && e.button.button==SDL_BUTTON_LEFT && theme.pressed) { request_present(window(theme.pressed));theme.pressed=0; }
+        if(!ui.capture && y<menu_height(w)) { if(e.type==SDL_EVENT_MOUSE_MOTION) change_cursor(c,system_cursor(c,32512)); if(e.type==SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button==SDL_BUTTON_LEFT) { cairo_t *cr=cairo_create(w->surface);int index=menubar_item(w,cr,x);cairo_destroy(cr);Gdi *g=gdi(w->menu);if(index>=0 && g) { MenuItem item=g->menu.items[index];if(!(item.state&3)) { uint32_t command=item.submenu ? popup_menu(c,item.submenu,w->hwnd,gx+x,gy+menu_height(w),0,NULL,0,0) : item.id;if(command && !wallpaper_command(c,w,command)) enqueue(w->hwnd,0x111,command,0); } } }return 1; }
         ui.cursor_x=x+gx;ui.cursor_y=y+gy;ui.pointer_window=w->hwnd;
         Window *target=NULL;
         if(ui.capture) { target=window(ui.capture);if(target) { int tx,ty;origin(target,&tx,&ty);x+=gx-tx;y+=gy-ty; } }
         else { y-=menu_height(w);target=hit(w,&x,&y); }
         if(!target) target=w;
+        if(e.type==SDL_EVENT_MOUSE_BUTTON_DOWN && !ui.capture) raise_mdi(target);
         if(e.type==SDL_EVENT_MOUSE_BUTTON_UP) { uint32_t bit=SDL_BUTTON_MASK(e.button.button);int opening_release=!!(target->opening_buttons&bit);for(unsigned i=1;i<MAX_WINDOWS;i++) ui.windows[i].opening_buttons&=~bit;if(opening_release) return 1; }
         uint32_t msg=0x200;if(e.type!=SDL_EVENT_MOUSE_MOTION) { unsigned base=e.button.button==SDL_BUTTON_RIGHT ? 0x204 : e.button.button==SDL_BUTTON_MIDDLE ? 0x207 : 0x201;msg=e.type==SDL_EVENT_MOUSE_BUTTON_UP ? base+1 : base;if(e.type==SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.clicks && !(e.button.clicks&1) && (target->class_style&8)) msg=base+2; }
         if(!ui.capture) enqueue(target->hwnd,0x20,target->hwnd,1u|((uint32_t)msg<<16));enqueue(target->hwnd,msg,mouse_key_flags(),lparam(x,y));
@@ -398,6 +525,13 @@ static int pump(CPU *c,int wait) {
 #define A(n) v[n]
 #define RET(x) do { *result=(uint64_t)(x);return 1; } while(0)
 #include "ui_dialog.inc"
+static int wallpaper_command(CPU *c,Window *owner,uint32_t command) {
+    if(command!=WALLPAPER_CHOOSE && command!=WALLPAPER_REMOVE) return 0;
+    if(command==WALLPAPER_REMOVE) { if(!wallpaper_set(NULL)) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,"Wallpaper","Could not remove the saved wallpaper.",owner ? owner->native : NULL);return 1; }
+    const char filters[]="Images (PNG, JPEG, BMP)\0*.png;*.jpg;*.jpeg;*.bmp\0\0";uint64_t filter=guest_alloc(c,sizeof filters);if(!filter) return 1;memcpy(writable_memory(c,filter,sizeof filters),filters,sizeof filters);
+    NativeFileDialog *dialog=choose_native_files(c,owner ? owner->hwnd : 0,SDL_FILEDIALOG_OPENFILE,"Choose wallpaper",NULL,filter,0);guest_free(c,filter);
+    if(dialog) { if(atomic_load(&dialog->done) && (dialog->error || (dialog->count && !wallpaper_set(dialog->files[0])))) { fprintf(stderr,"WinBox wallpaper: unable to load image\n");if(!getenv("WINBOX_TEST_DIALOG_FILES")) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,"Wallpaper","Could not load this image. Choose a PNG, JPEG or BMP up to 8192 pixels per side (32 megapixels).",owner ? owner->native : NULL); }file_dialog_release(dialog); }return 1;
+}
 int ui_api(CPU *c,const char *name,uint64_t *result) {
     uint64_t v[16]={0};for(unsigned i=0;i<4;i++) v[i]=argument(c,i);for(unsigned i=4;i<16;i++) { uint64_t address=c->r[RSP]+40+8*(i-4);if(address>=c->stack_base && address+8<=c->stack_base+c->stack_size) v[i]=load(c,address,64); }
     if(IS("GetOpenFileNameA") || IS("GetSaveFileNameA")) RET(native_file_dialog(c,A(0),IS("GetSaveFileNameA")));
@@ -422,7 +556,7 @@ int ui_api(CPU *c,const char *name,uint64_t *result) {
         if(!video(c)) RET(0);char *clname=text(c,A(1),IS("CreateWindowExW")),*title=text(c,A(2),IS("CreateWindowExW"));Class *cl=NULL;
         for(unsigned i=0;i<ui.class_count;i++) if(!strcmp(ui.classes[i].name,clname)) { cl=&ui.classes[i];break; }
         unsigned index=1;while(index<MAX_WINDOWS && ui.windows[index].used) index++;if(index==MAX_WINDOWS) { free(clname);free(title);RET(0); }
-        Window *w=&ui.windows[index];uint64_t handle=w->hwnd ? w->hwnd+MAX_WINDOWS*16 : WH(index);memset(w,0,sizeof *w);w->used=1;w->hwnd=handle;w->class_style=cl ? cl->style : 8;w->class_cursor=cl ? cl->cursor : 0;w->proc=cl ? cl->proc : !strcmp(clname,"EDIT") ? EDIT_PROC : 0;w->class_name=clname;w->title=title;w->style=A(3);w->exstyle=A(0);w->parent=A(8);w->menu=A(9);w->instance=A(10);w->x=(int)A(4);w->y=(int)A(5);w->w=(int)A(6);w->h=(int)A(7);
+        Window *w=&ui.windows[index];uint64_t handle=w->hwnd ? w->hwnd+MAX_WINDOWS*16 : WH(index);memset(w,0,sizeof *w);w->used=1;w->zorder=++zserial;w->hwnd=handle;w->class_style=cl ? cl->style : 8;w->class_cursor=cl ? cl->cursor : 0;w->proc=cl ? cl->proc : !strcmp(clname,"EDIT") ? EDIT_PROC : 0;w->class_name=clname;w->title=title;w->style=A(3);w->exstyle=A(0);w->parent=A(8);w->menu=A(9);w->instance=A(10);w->x=(int)A(4);w->y=(int)A(5);w->w=(int)A(6);w->h=(int)A(7);
         if(w->x==INT_MIN) w->x=100;if(w->y==INT_MIN) w->y=100;if(w->w<=0 || w->w>8192) w->w=800;if(w->h<=0 || w->h>8192) w->h=600;
         w->visible=!!(w->style&0x10000000);if((w->style&0x80000000) && !(w->style&0x00c00000)) w->opening_buttons=ui.input_buttons;w->surface=surface(w->w,w->h);
         if(!(w->style&0x40000000)) { w->native=create_native_window(w);if(!w->native) { trap(c,SDL_GetError());RET(0); }SDL_StartTextInput(w->native); }
@@ -441,18 +575,18 @@ int ui_api(CPU *c,const char *name,uint64_t *result) {
     if(IS("GetClientRect") || IS("GetWindowRect")) { Window *w=window(A(0));if(!w) RET(0);int x=0,y=0;if(IS("GetWindowRect")) { origin(w,&x,&y);y-=menu_height(w); }rectangle(c,A(1),x,y,x+w->w,y+w->h-(IS("GetClientRect") ? menu_height(w) : 0));RET(1); }
     if(IS("GetParent")) { Window *w=window(A(0));RET(w ? w->parent : 0); }
     if(IS("SetWindowPos")) {
-        Window *w=window(A(0));if(!w) RET(0);unsigned flags=A(6),changes=position_geometry(w,(int)A(2),(int)A(3),(int)A(4),(int)A(5),flags);position_notify(c,w,flags,changes);RET(1);
+        Window *w=window(A(0));if(!w) RET(0);unsigned flags=A(6),changes=position_geometry(w,(int)A(2),(int)A(3),(int)A(4),(int)A(5),flags);if(position_zorder(w,A(1),flags)) changes|=16;position_notify(c,w,flags,changes);RET(1);
     }
     if(IS("DeferWindowPos")) {
         DeferredBatch *batch=position_batch(A(0));if(!batch || !window(A(1)) || batch->count>=4096) RET(0);
         DeferredPosition *items=realloc(batch->positions,(batch->count+1)*sizeof *items);if(!items) RET(0);batch->positions=items;
-        batch->positions[batch->count++]=(DeferredPosition){A(1),(int)A(3),(int)A(4),(int)A(5),(int)A(6),(unsigned)A(7),0};RET(A(0));
+        batch->positions[batch->count++]=(DeferredPosition){A(1),A(2),(int)A(3),(int)A(4),(int)A(5),(int)A(6),(unsigned)A(7),0};RET(A(0));
     }
     if(IS("BeginDeferWindowPos")) { for(unsigned i=0;i<128;i++) if(!deferred[i].used) { DeferredBatch *batch=&deferred[i];batch->handle=batch->handle ? batch->handle+128*16 : 0x78000000+i*16;batch->used=1;batch->count=0;batch->positions=NULL;RET(batch->handle); }RET(0); }
     if(IS("EndDeferWindowPos")) {
         DeferredBatch *batch=position_batch(A(0));if(!batch) RET(0);size_t count=batch->count;DeferredPosition *items=batch->positions;batch->used=0;batch->positions=NULL;batch->count=0;
         for(size_t i=0;i<count;i++) if(!window(items[i].hwnd)) { free(items);RET(0); }
-        for(size_t i=0;i<count;i++) { DeferredPosition *p=&items[i];p->changes=position_geometry(window(p->hwnd),p->x,p->y,p->width,p->height,p->flags); }
+        for(size_t i=0;i<count;i++) { DeferredPosition *p=&items[i];p->changes=position_geometry(window(p->hwnd),p->x,p->y,p->width,p->height,p->flags);if(position_zorder(window(p->hwnd),p->after,p->flags)) p->changes|=16; }
         for(size_t i=0;i<count && !c->failed;i++) { DeferredPosition *p=&items[i];Window *w=window(p->hwnd);if(w) position_notify(c,w,p->flags,p->changes); }free(items);RET(!c->failed);
     }
     if(IS("AdjustWindowRectEx")) RET(1);
@@ -508,7 +642,7 @@ int ui_api(CPU *c,const char *name,uint64_t *result) {
                 cairo_surface_flush(o->surface);cairo_surface_flush(mask->surface);uint8_t *pixels=cairo_image_surface_get_data(o->surface),*bits=cairo_image_surface_get_data(mask->surface);int ds=cairo_image_surface_get_stride(o->surface),ms=cairo_image_surface_get_stride(mask->surface);
                 for(int y=0;y<height;y++) for(int x=0;x<width;x++) { uint32_t pixel,bit;memcpy(&pixel,pixels+y*ds+x*4,4);memcpy(&bit,bits+y*ms+x*4,4);if(bit&0xffffff) pixel=0;memcpy(pixels+y*ds+x*4,&pixel,4); }cairo_surface_mark_dirty(o->surface);
             }
-        }const char *dump=getenv("WINBOX_DUMP_ICONS");if(dump && o && o->surface) { char path[1024];snprintf(path,sizeof path,"%s/%llx-icon.png",dump,(unsigned long long)h);cairo_surface_write_to_png(o->surface,path);if(bitmap && bitmap->surface) { snprintf(path,sizeof path,"%s/%llx-color.png",dump,(unsigned long long)h);cairo_surface_write_to_png(bitmap->surface,path); }if(mask && mask->surface) { snprintf(path,sizeof path,"%s/%llx-mask.png",dump,(unsigned long long)h);cairo_surface_write_to_png(mask->surface,path); } }RET(h);
+        }if(o && o->surface) o->modern_icon=modern_icon_identify(o->surface);const char *dump=getenv("WINBOX_DUMP_ICONS");if(dump && o && o->surface) { char path[1024];snprintf(path,sizeof path,"%s/%llx-icon.png",dump,(unsigned long long)h);cairo_surface_write_to_png(o->surface,path);if(bitmap && bitmap->surface) { snprintf(path,sizeof path,"%s/%llx-color.png",dump,(unsigned long long)h);cairo_surface_write_to_png(bitmap->surface,path); }if(mask && mask->surface) { snprintf(path,sizeof path,"%s/%llx-mask.png",dump,(unsigned long long)h);cairo_surface_write_to_png(mask->surface,path); } }RET(h);
     }
     if(IS("LoadImageA") && (A(2)==1 || A(2)==2) && !(A(5)&0x10)) {
         unsigned group_type=A(2)==1 ? 14 : 12,entry_type=A(2)==1 ? 3 : 1,hotspot=A(2)==2 ? 4 : 0;
@@ -554,7 +688,7 @@ int ui_api(CPU *c,const char *name,uint64_t *result) {
         }
         if(!o->surface) { o->used=0;RET(0); }RET(h);
     }
-    if(IS("DrawIconEx")) { DC *d=dc(A(0));Gdi *o=gdi(A(3));if(getenv("WINBOX_DUMP_ICONS") && d) { double x1,y1,x2,y2;cairo_clip_extents(d->cr,&x1,&y1,&x2,&y2);cairo_matrix_t matrix;cairo_get_matrix(d->cr,&matrix);fprintf(stderr,"DrawIcon %llx at %d,%d size %lld,%lld flags=%llx clip=%g,%g,%g,%g origin=%g,%g status=%d\n",(unsigned long long)A(3),(int)A(1),(int)A(2),(long long)A(4),(long long)A(5),(unsigned long long)A(8),x1,y1,x2,y2,matrix.x0,matrix.y0,cairo_status(d->cr)); }if(d && o && o->surface) { cairo_save(d->cr);cairo_translate(d->cr,(int)A(1),(int)A(2));int w=cairo_image_surface_get_width(o->surface),h=cairo_image_surface_get_height(o->surface);int width=(int32_t)A(4),height=(int32_t)A(5);if(width>0 && height>0 && w && h) cairo_scale(d->cr,(double)width/w,(double)height/h);cairo_set_source_surface(d->cr,o->surface,0,0);cairo_paint(d->cr);cairo_restore(d->cr); }RET(1); }
+    if(IS("DrawIconEx")) { DC *d=dc(A(0));Gdi *o=gdi(A(3));if(getenv("WINBOX_DUMP_ICONS") && d) { double x1,y1,x2,y2;cairo_clip_extents(d->cr,&x1,&y1,&x2,&y2);cairo_matrix_t matrix;cairo_get_matrix(d->cr,&matrix);fprintf(stderr,"DrawIcon %llx at %d,%d size %lld,%lld flags=%llx clip=%g,%g,%g,%g origin=%g,%g status=%d\n",(unsigned long long)A(3),(int)A(1),(int)A(2),(long long)A(4),(long long)A(5),(unsigned long long)A(8),x1,y1,x2,y2,matrix.x0,matrix.y0,cairo_status(d->cr)); }if(d && o && o->surface) { cairo_save(d->cr);cairo_translate(d->cr,(int)A(1),(int)A(2));int w=cairo_image_surface_get_width(o->surface),h=cairo_image_surface_get_height(o->surface);int width=(int32_t)A(4),height=(int32_t)A(5);if(width>0 && height>0 && w && h) cairo_scale(d->cr,(double)width/w,(double)height/h);if(!((uint32_t)A(8)&2) || !modern_icon_draw(d->cr,o->modern_icon,0,0,w,h)) { cairo_set_source_surface(d->cr,o->surface,0,0);cairo_paint(d->cr); }cairo_restore(d->cr); }RET(1); }
     if(IS("CreatePen")) { uint64_t h=new_gdi(2);Gdi *o=gdi(h);if(o) { o->width=A(1) ? A(1) : 1;o->color=A(2); }RET(h); }
     if(IS("CreateFontA") || IS("CreateFontIndirectW")) { uint64_t h=new_gdi(3);Gdi *o=gdi(h);if(o) { if(IS("CreateFontA")) { o->size=(int)A(0);o->font_width=(int)A(1);o->weight=(int)A(4);o->italic=(uint8_t)A(5);o->underline=(uint8_t)A(6);o->strike=(uint8_t)A(7);o->charset=(uint8_t)A(8);o->pitch=(uint8_t)A(12);char *s=text(c,A(13),0);snprintf(o->face,sizeof o->face,"%s",s);free(s); }else { o->size=(int)load(c,A(0),32);o->font_width=(int)load(c,A(0)+4,32);o->weight=load(c,A(0)+16,32);o->italic=load(c,A(0)+20,8);o->underline=load(c,A(0)+21,8);o->strike=load(c,A(0)+22,8);o->charset=load(c,A(0)+23,8);o->pitch=load(c,A(0)+27,8);char *s=wide(c,A(0)+28);snprintf(o->face,sizeof o->face,"%s",s);free(s); } }RET(h); }
     if(IS("GetStockObject")) { static uint64_t stock[32];unsigned n=A(0);if(n>=32) RET(0);if(!stock[n]) { stock[n]=new_gdi(n>=10 && n<=17 ? 3 : n>=6 && n<=8 ? 2 : 1);Gdi *o=gdi(stock[n]);o->color=n==0 || n==6 ? 0xffffff : n==4 ? 0x808080 : 0;o->size=11;o->width=1;strcpy(o->face,n==17 ? "MS Shell Dlg" : "Tahoma");if(n==17) o->pitch=0x22;if(n==10 || n==11 || n==16) { o->size=12;strcpy(o->face,"Courier New");o->pitch=0x31;o->charset=n==10 ? 255 : 0; } }RET(stock[n]); }
@@ -621,6 +755,7 @@ int ui_api(CPU *c,const char *name,uint64_t *result) {
         uint64_t target=A(0),*slot=IS("SetFocus") ? &ui.focus : IS("SetActiveWindow") ? &ui.active : &ui.capture,old=*slot;
         if(target && !window(target)) { c->last_error=1400;RET(0); }if(old==target) RET(old);*slot=target;
         if(IS("SetFocus")) { invoke(c,window(old),8,target,0);if(ui.focus==target && window(target)) { Window *root=window(target);while(root && !root->native && window(root->parent)) root=window(root->parent);if(root && root->native) { ui.active=coordinate_space(root);if(!root->native_popup && SDL_GetKeyboardFocus()!=root->native) SDL_RaiseWindow(root->native); }invoke(c,window(target),7,old,0); } }
+        if(IS("SetActiveWindow")) raise_mdi(window(target));
         RET(old);
     }
     if(IS("GetFocus")) RET(ui.focus);
