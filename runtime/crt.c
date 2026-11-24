@@ -9,7 +9,7 @@
 #define RET(v) do { *result=(uint64_t)(v);return 1; } while(0)
 uint64_t crt_data(CPU *c,const char *name) {
     uint64_t a=guest_alloc(c,16);
-    if(!strcmp(name,"_acmdln")) store(c,a,64,guest_string_alloc(c,"winbox-native"));
+    if(!strcmp(name,"_acmdln")) { extern const char *process_command_line_ansi(void);store(c,a,64,guest_string_alloc(c,process_command_line_ansi())); }
     if(!strcmp(name,"__initenv")) store(c,a,64,guest_alloc(c,8));
     return a;
 }
@@ -114,6 +114,11 @@ static int scan_text(CPU *c,const char *input,const char *format) {
 }
 static size_t allocation_size(CPU *c,uint64_t a) { extern size_t guest_size(CPU *,uint64_t);return guest_size(c,a); }
 int crt_api(CPU *c,const char *name,uint64_t *result) {
+    if(IS("perror")) {
+        int native_error=errno;extern uint64_t thread_crt_buffer(CPU *,unsigned,size_t);
+        uint64_t slot=thread_crt_buffer(c,0,4);int error=(int)load(c,slot,32);char *prefix=A(0) ? guest_string(c,A(0)) : NULL;
+        fprintf(stderr,"%s%s%s\n",prefix ? prefix : "",prefix && *prefix ? ": " : "",strerror(error ? error : native_error));RET(0);
+    }
     if(IS("log10")) { double argument,value;memcpy(&argument,c->xmm[0],sizeof argument);value=log10(argument);memcpy(c->xmm[0],&value,sizeof value);if(argument<=0) { extern uint64_t thread_crt_buffer(CPU *,unsigned,size_t);store(c,thread_crt_buffer(c,0,4),32,argument==0 ? 34 : 33); }RET(0); }
     if(IS("strftime")) {
         if(!A(1) || A(1)>1024*1024) RET(0);char *format=guest_string(c,A(2));if(!format || !A(3)) RET(0);

@@ -20,6 +20,7 @@ with tempfile.TemporaryDirectory(prefix='winbox-gui-test-', dir=binary.parent) a
     (binary.parent/'gui-smoke.log').write_text(result.stdout+'\n'+result.stderr)
     assert result.returncode == 0, result.stderr[-4000:]
     assert 'lift stopped' not in result.stderr, result.stderr[-4000:]
+    assert 'WinBox presentation failed' not in result.stderr, result.stderr[-4000:]
     for marker in ['WinBox event loop ready', 'WinBox smoke input verified', 'WinBox smoke close requested']:
         assert marker in result.stderr, f'Missing {marker}: {result.stderr[-4000:]}'
     assert 'Could not save configuration' not in result.stdout

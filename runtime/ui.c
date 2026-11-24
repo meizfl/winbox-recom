@@ -207,7 +207,7 @@ static void present(Window *w) { if(!w) return;while(!w->native && w->parent && 
     if(frame_unready(w)) { w->last_present=SDL_GetTicks();if(w->frame) upload_frame(w,w->frame);return; }
     if(!w->frame || cairo_image_surface_get_width(w->frame)!=w->w || cairo_image_surface_get_height(w->frame)!=w->h) { if(w->frame) cairo_surface_destroy(w->frame);w->frame=surface(w->w,w->h); }
     cairo_surface_t *s=w->frame;if(!s) return;cairo_t *cr=cairo_create(s);int bar=menu_height(w);if(bar) { color(cr,0xdcdcdc);cairo_paint(cr); }composite(cr,w,0,bar);if(bar) { cairo_save(cr);cairo_rectangle(cr,0,0,w->w,bar);cairo_clip(cr);color(cr,0xdcdcdc);cairo_paint(cr);menubar_item(w,cr,-1);cairo_restore(cr); }paint_caret(cr,w);cairo_destroy(cr);cairo_surface_flush(s);w->resize_pending=0;w->frame_dirty=0;w->last_present=SDL_GetTicks();
-    upload_frame(w,s);
+    if(!upload_frame(w,s)) w->frame_dirty=1;
     const char *frames=getenv("WINBOX_TEST_FRAME_DIR");if(frames && !strcmp(w->class_name,"routeros_connect")) { static unsigned serial;char path[4096];snprintf(path,sizeof path,"%s/frame-%04u.png",frames,serial++);cairo_surface_write_to_png(s,path); }
     const char *shot=getenv("WINBOX_SCREENSHOT");if(shot && ui.capture_screenshot && w->visible) cairo_surface_write_to_png(s,shot);
 }

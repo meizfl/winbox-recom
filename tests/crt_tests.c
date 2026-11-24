@@ -21,6 +21,7 @@ int main(void) {
     double logarithm_input=1000,logarithm_result;memcpy(c.xmm[0],&logarithm_input,8);memset(c.xmm[0]+8,0xa5,8);api(&c,"msvcrt.dll!log10",0,0);memcpy(&logarithm_result,c.xmm[0],8);CHECK(fabs(logarithm_result-3)<1e-12 && c.xmm[0][8]==0xa5);
     logarithm_input=0;memcpy(c.xmm[0],&logarithm_input,8);api(&c,"msvcrt.dll!log10",0,0);memcpy(&logarithm_result,c.xmm[0],8);CHECK(isinf(logarithm_result) && logarithm_result<0);uint64_t math_errno=api(&c,"msvcrt.dll!_errno",0,0);CHECK(load(&c,math_errno,32)==34);
     logarithm_input=-1;memcpy(c.xmm[0],&logarithm_input,8);api(&c,"msvcrt.dll!log10",0,0);memcpy(&logarithm_result,c.xmm[0],8);CHECK(isnan(logarithm_result) && load(&c,math_errno,32)==33);
+    api(&c,"msvcrt.dll!perror",guest_string_alloc(&c,"expected CRT diagnostic"),0);CHECK(!c.failed && load(&c,math_errno,32)==33);
     uint64_t released=guest_alloc(&c,64);store(&c,released+32,32,123);
     guest_free(&c,released);CHECK(load(&c,released+32,32)==123);
     store(&c,released+32,32,4);

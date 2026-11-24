@@ -15,10 +15,11 @@ static int frame_unready(Window *root) {
     return 0;
 }
 
-static void upload_frame(Window *w,cairo_surface_t *frame) {
+static int upload_frame(Window *w,cairo_surface_t *frame) {
     int width=cairo_image_surface_get_width(frame),height=cairo_image_surface_get_height(frame);
     SDL_Surface *source=SDL_CreateSurfaceFrom(width,height,SDL_PIXELFORMAT_ARGB8888,cairo_image_surface_get_data(frame),cairo_image_surface_get_stride(frame));
     SDL_Surface *destination=SDL_GetWindowSurface(w->native);
+    int ok=0;
     if(source && destination) {
         /* Keep the completed image at its logical pixel size while a larger
          * native buffer is waiting for WM_SIZE/WM_PAINT. Do not stretch it. */
@@ -26,9 +27,13 @@ static void upload_frame(Window *w,cairo_surface_t *frame) {
         if(width>2 && height>2) memcpy(&background,cairo_image_surface_get_data(frame)+(height-2)*cairo_image_surface_get_stride(frame)+4*(width-2),4);
         SDL_FillSurfaceRect(destination,NULL,background);
         int logical_width=w->w,logical_height=w->h;SDL_GetWindowSize(w->native,&logical_width,&logical_height);if(logical_width<1) logical_width=w->w;if(logical_height<1) logical_height=w->h;SDL_Rect bounds={0,0,(int)lround((double)width*destination->w/logical_width),(int)lround((double)height*destination->h/logical_height)};
-        SDL_BlitSurfaceScaled(source,NULL,destination,&bounds,SDL_SCALEMODE_NEAREST);SDL_UpdateWindowSurface(w->native);
+        ok=SDL_BlitSurfaceScaled(source,NULL,destination,&bounds,SDL_SCALEMODE_NEAREST) && SDL_UpdateWindowSurface(w->native);
     }
+    static int reported;
+    if(!ok && !reported) { fprintf(stderr,"WinBox presentation failed (%s): %s\n",SDL_GetCurrentVideoDriver(),SDL_GetError());reported=1; }
+    if(ok) reported=0;
     if(source) SDL_DestroySurface(source);
+    return ok;
 }
 
 static void caret_changed(void) {

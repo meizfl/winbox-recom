@@ -1,8 +1,28 @@
 #!/usr/bin/env python3
 """Bind SDL 3.4.20 to static libdbus instead of dlopen (musl static ELF)."""
-import sys
+import sys, shutil
 from pathlib import Path
 root = Path(sys.argv[1])
+wayland = root / 'src/video/wayland'
+shutil.copy2(Path(__file__).with_name('SDL_waylandframebuffer.c'), wayland)
+p = wayland / 'SDL_waylandshmbuffer.h'
+s = p.read_text().replace('#endif', '''struct wl_buffer_listener;
+extern struct wl_buffer *Wayland_AllocBufferFromPoolCallback(Wayland_SHMPool *, int, int, void **, const struct wl_buffer_listener *, void *);
+#endif''')
+p.write_text(s)
+p = wayland / 'SDL_waylandshmbuffer.c'
+s = p.read_text().replace('struct wl_buffer *Wayland_AllocBufferFromPool(Wayland_SHMPool *shmPool, int width, int height, void **data)', 'struct wl_buffer *Wayland_AllocBufferFromPoolCallback(Wayland_SHMPool *shmPool, int width, int height, void **data, const struct wl_buffer_listener *listener, void *userdata)')
+s = s.replace('wl_buffer_add_listener(buffer, &buffer_listener, shmPool);', 'wl_buffer_add_listener(buffer, listener, userdata);')
+s = s.replace('void Wayland_ReleaseSHMPool(Wayland_SHMPool *shmPool)', '''struct wl_buffer *Wayland_AllocBufferFromPool(Wayland_SHMPool *pool, int width, int height, void **data)
+{
+    return Wayland_AllocBufferFromPoolCallback(pool, width, height, data, &buffer_listener, pool);
+}
+
+void Wayland_ReleaseSHMPool(Wayland_SHMPool *shmPool)''')
+p.write_text(s)
+p = wayland / 'SDL_waylandvideo.c'
+s = p.read_text().replace('    device->CreateSDLWindow = Wayland_CreateWindow;', '    extern void WB_WaylandFramebufferInit(SDL_VideoDevice *);\n    WB_WaylandFramebufferInit(device);\n    device->CreateSDLWindow = Wayland_CreateWindow;')
+p.write_text(s)
 p = root / 'src/core/linux/SDL_dbus.c'
 s = p.read_text()
 start = s.index('// we never link directly to libdbus.')

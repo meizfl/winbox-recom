@@ -15,6 +15,8 @@ jobs:
       - run: |
           mkdir -p build/linux-static
           docker run --rm -v "$PWD:/src:ro" -v "$PWD/build/linux-static:/out" winbox-static-builder sh /src/packaging/build-linux-static.sh
+      - name: Native Wayland and runtime tests
+        run: docker run --rm -v "$PWD:/src:ro" -v "$PWD/build/linux-static:/out" winbox-static-builder sh /src/packaging/test-linux-static.sh
       - name: Debian 11 smoke
         run: |
           docker run --rm -v "$PWD/build/linux-static/dist:/app:ro" -v /usr/share/fonts:/usr/share/fonts:ro -e SDL_VIDEO_DRIVER=dummy debian:11-slim /app/winbox3-linux-amd64 --profile /tmp/profile --smoke-ms 1500

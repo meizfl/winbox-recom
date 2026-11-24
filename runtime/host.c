@@ -88,9 +88,24 @@ uint64_t guest_string_alloc(CPU *c,const char *s) {
 }
 uint64_t argument(CPU *c,unsigned n) { const unsigned r[]={RCX,RDX,R8,R9}; return n<4 ? c->r[r[n]] : load(c,c->r[RSP]+40+8*(n-4),64); }
 static const char *executable_path(void);
+#ifdef WINBOX_PORTABLE_FONTS
+#include <fontconfig/fontconfig.h>
+#include "portable_fonts.h"
+static void portable_fonts_init(void) {
+    static int initialized;if(initialized) return;initialized=1;
+    if(getenv("FONTCONFIG_FILE")) return;
+    FcConfig *config=FcConfigCreate();
+    if(config && FcConfigParseAndLoadFromMemory(config,(const FcChar8 *)portable_font_config,FcTrue) && FcConfigBuildFonts(config)) FcConfigSetCurrent(config);
+    else fprintf(stderr,"WinBox could not initialize portable font configuration\n");
+    if(config) FcConfigDestroy(config);
+}
+#endif
 int host_init(CPU *c) {
 #ifdef __APPLE__
     if(!getenv("FONTCONFIG_FILE")) { char config[PATH_MAX];snprintf(config,sizeof config,"%s",executable_path());char *slash=strrchr(config,'/');if(slash) { *slash=0;size_t length=strlen(config);snprintf(config+length,sizeof config-length,"/../Resources/fonts.conf");if(!access(config,R_OK)) setenv("FONTCONFIG_FILE",config,1); } }
+#endif
+#ifdef WINBOX_PORTABLE_FONTS
+    portable_fonts_init();
 #endif
     Host *h=calloc(1,sizeof *h); if(!h) return 0;c->host=h;h->pages=calloc(0xe0000000/4096,sizeof *h->pages);if(!h->pages) return 0;h->dirty=calloc(1,(c->image_size+4095)/4096);if(!h->dirty) return 0;h->next=UINT64_C(0x10000000);
     c->gs_base=guest_alloc(c,4096);
@@ -102,6 +117,7 @@ void host_free(CPU *c) {
     Host *h=c->host; if(!h) return;
     extern void threads_free(CPU *);threads_free(c);
     extern void network_free(void);network_free();
+    extern void process_free(CPU *);process_free(c);
     for(unsigned i=0;i<256;i++) if(h->files[i]) fclose(h->files[i]);
     for(unsigned i=0;i<h->atom_count;i++) free(h->atoms[i]);
     for(unsigned i=0;i<32;i++) if(h->find_used[i]) globfree(&h->finds[i]);
@@ -123,6 +139,7 @@ static const char *executable_path(void) {
     }return path;
 }
 static int mkdirs(char *p);
+const char *host_executable_path(void) { return executable_path(); }
 static const char *profile_path(void) {
     static char path[PATH_MAX];if(!*path) { const char *env=getenv("WINBOX_PROFILE"),*home=getenv("HOME");if(env && *env) snprintf(path,sizeof path,"%s",env);else {
 #ifdef __APPLE__

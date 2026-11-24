@@ -324,7 +324,7 @@ def main():
     binding=''.join(f'store(c,{u(addr)},64,crt_data(c,{json.dumps(name.split("!")[1])}));' if name.split('!')[1] in ('_acmdln','_fmode','__initenv') else f'store(c,{u(addr)},64,{u(addr)});' for addr,name in pe.imports.items())
     write(out/'imports.c','#include "rt.h"\nconst char *import_name(uint64_t pc) { switch(pc) {\n'+imports+'default: return NULL;\n}}\nvoid bind_imports(CPU *c) {'+binding+'}\n')
     import re
-    api_sources=[Path(__file__).resolve().parent.parent/'runtime'/name for name in ('api.c','host.c','crt.c','ui.c','network.c','threads.c')]
+    api_sources=[Path(__file__).resolve().parent.parent/'runtime'/name for name in ('api.c','host.c','crt.c','ui.c','network.c','threads.c','process.c')]
     dispatched=set()
     for source in api_sources:
         content=source.read_text()
