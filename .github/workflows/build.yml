@@ -1,0 +1,27 @@
+name: Native packages
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  macos:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: brew install cmake ninja pkgconf gperf
+      - run: python3 -m pip install 'capstone>=5.0.7,<6' meson
+      - run: bash packaging/build-macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: winbox3-macos-x86_64
+          path: |
+            build/macos-release/dist/*.zip
+            build/macos-release/dist/SHA256SUMS
+      - if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" build/macos-release/dist/*.zip --title "$GITHUB_REF_NAME" --generate-notes --prerelease

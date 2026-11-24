@@ -1,0 +1,58 @@
+#!/bin/bash
+set -euo pipefail
+src=$(cd "$(dirname "$0")/.." && pwd)
+out=${1:-"$src/build/macos-release"}
+mkdir -p "$out"
+out=$(cd "$out" && pwd)
+prefix="$out/deps"
+export MACOSX_DEPLOYMENT_TARGET=10.14
+export SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
+export CFLAGS="-O2 -arch x86_64 -mmacosx-version-min=10.14"
+export CXXFLAGS="$CFLAGS"
+export LDFLAGS="-arch x86_64 -mmacosx-version-min=10.14"
+export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig:$prefix/share/pkgconfig"
+unset PKG_CONFIG_PATH || true
+export CMAKE_PREFIX_PATH="$prefix"
+python3 "$src/packaging/fetch_sources.py" zlib png expat freetype fontconfig pixman cairo sdl --cache "$out/cache" --extract "$out/sources"
+cmake_dep() {
+  local name=$1; shift
+  cmake -S "$out/sources/$name" -B "$out/$name-build" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_INSTALL_LIBDIR=lib \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET=10.14 -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+    -DBUILD_SHARED_LIBS=OFF "$@"
+  cmake --build "$out/$name-build" -j4
+  cmake --install "$out/$name-build"
+}
+meson_dep() {
+  local name=$1; shift
+  meson setup "$out/$name-build" "$out/sources/$name" --prefix="$prefix" --libdir=lib --default-library=static --buildtype=release "$@"
+  meson compile -C "$out/$name-build" -j4
+  meson install -C "$out/$name-build"
+}
+cmake_dep zlib -DZLIB_BUILD_TESTING=OFF
+cmake_dep png -DPNG_SHARED=OFF -DPNG_TESTS=OFF -DPNG_TOOLS=OFF
+cmake_dep expat -DEXPAT_SHARED_LIBS=OFF -DEXPAT_BUILD_TESTS=OFF -DEXPAT_BUILD_TOOLS=OFF -DEXPAT_BUILD_EXAMPLES=OFF -DEXPAT_BUILD_DOCS=OFF
+cmake_dep freetype -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_BROTLI=ON
+meson_dep fontconfig -Ddoc=disabled -Dnls=disabled -Dtests=disabled -Dtools=disabled -Dcache-build=disabled -Dxml-backend=expat
+meson_dep pixman -Dtests=disabled -Ddemos=disabled -Dgtk=disabled -Dlibpng=disabled
+meson_dep cairo -Dfontconfig=enabled -Dfreetype=enabled -Dpng=enabled -Dquartz=disabled \
+  -Dxlib=disabled -Dxcb=disabled -Dxlib-xcb=disabled -Dglib=disabled -Dlzo=disabled \
+  -Dspectre=disabled -Dsymbol-lookup=disabled -Dtests=disabled -Dgtk_doc=false -Dgtk2-utils=disabled
+cmake_dep sdl -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_DEPS_SHARED=OFF \
+  -DSDL_AUDIO=OFF -DSDL_JOYSTICK=OFF -DSDL_HAPTIC=OFF -DSDL_SENSOR=OFF -DSDL_CAMERA=OFF
+cmake -S "$src" -B "$out/app-build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=10.14 -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+  -DWINBOX_STATIC_DEPENDENCIES=ON -DIconv_INCLUDE_DIR="$SDKROOT/usr/include" \
+  -DIconv_LIBRARY="$SDKROOT/usr/lib/libiconv.tbd"
+cmake --build "$out/app-build" -j4
+ctest --test-dir "$out/app-build" --output-on-failure
+bundle="$out/dist/WinBox Recom.app"
+mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
+cp "$out/app-build/winbox3" "$bundle/Contents/MacOS/winbox3"
+cp "$src/packaging/Info.plist" "$bundle/Contents/Info.plist"
+cp "$src/packaging/fonts.conf" "$bundle/Contents/Resources/fonts.conf"
+strip -x "$bundle/Contents/MacOS/winbox3"
+python3 "$src/packaging/verify_macos.py" "$bundle/Contents/MacOS/winbox3"
+codesign --force --deep --sign - "$bundle"
+ditto -c -k --sequesterRsrc --keepParent "$bundle" "$out/dist/winbox3-macos-x86_64.zip"
+(cd "$out/dist"; shasum -a 256 winbox3-macos-x86_64.zip > SHA256SUMS)

@@ -1,0 +1,10 @@
+build/
+gen/
+dist/
+__pycache__/
+*.pyc
+*.secret
+*.log
+.DS_Store
+profile/
+profiles/

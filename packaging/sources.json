@@ -1,0 +1,57 @@
+{
+  "sdl": {
+    "filename": "SDL3-3.4.20.tar.gz",
+    "url": "https://www.libsdl.org/release/SDL3-3.4.20.tar.gz",
+    "sha256": "f3bb06f55bed9557227a700af2ea62e49497ebdf58037732a731a5fb3ef8581f"
+  },
+  "zlib": {
+    "filename": "zlib-1.4.tar.gz",
+    "url": "https://zlib.net/zlib-1.4.tar.gz",
+    "sha256": "02dd159783677a749c04adbdd02b55b8a2bcc7e054f51b76b549199a916ad584"
+  },
+  "png": {
+    "filename": "libpng-1.6.59.tar.xz",
+    "url": "https://download.sourceforge.net/libpng/libpng-1.6.59.tar.xz",
+    "sha256": "d80dd2a38a37f803cb9b6ac7b14bd6e74ddc3b654780a8380bdf93523fdb4389"
+  },
+  "freetype": {
+    "filename": "freetype-2.14.3.tar.xz",
+    "url": "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.xz",
+    "sha256": "36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f"
+  },
+  "expat": {
+    "filename": "expat-2.10.0.tar.xz",
+    "url": "https://github.com/libexpat/libexpat/releases/download/R_2_10_0/expat-2.10.0.tar.xz",
+    "sha256": "c624ba2998fc65df1163a49641ff3f9ab73138b11641d92c86bee0fb01b1bc7f"
+  },
+  "fontconfig": {
+    "filename": "fontconfig-2.17.1.tar.xz",
+    "url": "https://distfiles.alpinelinux.org/distfiles/v3.23/fontconfig-2.17.1.tar.xz",
+    "sha256": "9f5cae93f4fffc1fbc05ae99cdfc708cd60dfd6612ffc0512827025c026fa541"
+  },
+  "pixman": {
+    "filename": "pixman-0.46.4.tar.xz",
+    "url": "https://cairographics.org/releases/pixman-0.46.4.tar.xz",
+    "sha256": "a098c33924754ad43f981b740f6d576c70f9ed1006e12221b1845431ebce1239"
+  },
+  "cairo": {
+    "filename": "cairo-1.18.4.tar.xz",
+    "url": "https://cairographics.org/releases/cairo-1.18.4.tar.xz",
+    "sha256": "445ed8208a6e4823de1226a74ca319d3600e83f6369f99b14265006599c32ccb"
+  },
+  "dbus": {
+    "filename": "dbus-1.16.2.tar.xz",
+    "url": "https://dbus.freedesktop.org/releases/dbus/dbus-1.16.2.tar.xz",
+    "sha256": "0ba2a1a4b16afe7bceb2c07e9ce99a8c2c3508e5dec290dbb643384bd6beb7e2"
+  },
+  "xau": {
+    "filename": "libXau-1.0.12.tar.xz",
+    "url": "https://www.x.org/releases/individual/lib/libXau-1.0.12.tar.xz",
+    "sha256": "74d0e4dfa3d39ad8939e99bda37f5967aba528211076828464d2777d477fc0fb"
+  },
+  "xrandr": {
+    "filename": "libXrandr-1.5.4.tar.xz",
+    "url": "https://www.x.org/releases/individual/lib/libXrandr-1.5.4.tar.xz",
+    "sha256": "1ad5b065375f4a85915aa60611cc6407c060492a214d7f9daf214be752c3b4d3"
+  }
+}
