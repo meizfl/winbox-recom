@@ -7,6 +7,14 @@ static uint64_t api4(CPU *c,const char *name,uint64_t a,uint64_t b,uint64_t d,ui
     return c->r[RAX];
 }
 static uint64_t api(CPU *c,const char *name,uint64_t a,uint64_t b) { return api4(c,name,a,b,0,0); }
+/* Count an area rather than one glyph column: fallback fonts can leave x=15
+ * completely blank even when text is rendered correctly. */
+static unsigned ink(CPU *c,uint64_t dc,int left,int top,int right,int bottom) {
+    unsigned count=0;
+    for(int y=top;y<bottom;y++) for(int x=left;x<right;x++)
+        if(api4(c,"GDI32.dll!GetPixel",dc,x,y,0)!=0xffffff) count++;
+    return count;
+}
 int main(void) {
     CPU c;CHECK(cpu_init(&c));c.r[RSP]=c.stack_base+c.stack_size-264;
     SDL_SetEnvironmentVariable(SDL_GetEnvironment(),"SDL_VIDEO_DRIVER","dummy",true);
@@ -27,7 +35,7 @@ int main(void) {
     api4(&c,"USER32.dll!DrawTextExA",dc,text,(uint64_t)strlen(label),draw);
     /* inside the rect: glyph pixels must exist (not pure background) */
     unsigned inside_hits=0,outside_hits=0;
-    for(int yy=10;yy<32;yy++) { if(api4(&c,"GDI32.dll!GetPixel",dc,15,yy,0)!=0xffffff) inside_hits++;if(api4(&c,"GDI32.dll!GetPixel",dc,130,yy,0)!=0xffffff) outside_hits++; }
+    inside_hits=ink(&c,dc,10,10,110,30);outside_hits=ink(&c,dc,110,0,300,40);
     CHECK(inside_hits>0);
     /* beyond the right edge of the rect (x=130 > 110): nothing may be drawn there */
     CHECK(outside_hits==0);
@@ -36,7 +44,7 @@ int main(void) {
     store(&c,c.r[RSP]+40,64,0x24);store(&c,c.r[RSP]+48,64,params);
     api4(&c,"USER32.dll!DrawTextExA",dc,text,(uint64_t)strlen(label),draw);
     inside_hits=0;outside_hits=0;
-    for(int yy=10;yy<32;yy++) { if(api4(&c,"GDI32.dll!GetPixel",dc,15,yy,0)!=0xffffff) inside_hits++;if(api4(&c,"GDI32.dll!GetPixel",dc,130,yy,0)!=0xffffff) outside_hits++; }
+    inside_hits=ink(&c,dc,10,10,110,30);outside_hits=ink(&c,dc,110,0,300,40);
     CHECK(inside_hits>0);
     CHECK(outside_hits==0);
     /* DT_NOCLIP=0x100 must still paint past the rect edge */
@@ -44,7 +52,7 @@ int main(void) {
     store(&c,c.r[RSP]+40,64,0x124);store(&c,c.r[RSP]+48,64,params);
     api4(&c,"USER32.dll!DrawTextExA",dc,text,(uint64_t)strlen(label),draw);
     outside_hits=0;
-    for(int yy=10;yy<32;yy++) if(api4(&c,"GDI32.dll!GetPixel",dc,130,yy,0)!=0xffffff) outside_hits++;
+    outside_hits=ink(&c,dc,110,0,300,40);
     CHECK(outside_hits>0);
     printf("DrawTextExA clipping: ok\n");
     return 0;

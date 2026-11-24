@@ -51,6 +51,12 @@ mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 cp "$out/app-build/winbox3" "$bundle/Contents/MacOS/winbox3"
 cp "$src/packaging/Info.plist" "$bundle/Contents/Info.plist"
 cp "$src/packaging/fonts.conf" "$bundle/Contents/Resources/fonts.conf"
+python3 "$src/packaging/extract_icon.py" "$src/winbox64.v3.43p10.exe" "$out/WinBox.ico"
+mkdir -p "$out/WinBox.iconset"
+for size in 16 32 128 256 512; do
+  sips -s format png -z "$size" "$size" "$out/WinBox.ico" --out "$out/WinBox.iconset/icon_${size}x${size}.png" >/dev/null
+done
+iconutil -c icns "$out/WinBox.iconset" -o "$bundle/Contents/Resources/WinBox.icns"
 strip -x "$bundle/Contents/MacOS/winbox3"
 python3 "$src/packaging/verify_macos.py" "$bundle/Contents/MacOS/winbox3"
 codesign --force --deep --sign - "$bundle"

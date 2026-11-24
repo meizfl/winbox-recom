@@ -6,4 +6,4 @@ RUN apk add --no-cache build-base cmake ninja python3 py3-capstone meson pkgconf
     libx11-dev libx11-static libxext-dev libxext-static libxcb-dev libxcb-static \
     libxau-dev libxdmcp-dev libxcursor-dev libxrandr-dev libxfixes-dev libxi-dev libxi-static \
     wayland-dev wayland-static wayland-protocols libxkbcommon-dev libxkbcommon-static \
-    libffi-dev dbus-dev
+    libffi-dev dbus-dev mesa-dev

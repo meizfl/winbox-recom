@@ -13,6 +13,9 @@ jobs:
       - run: |
           mkdir -p build/linux-static
           docker run --rm -v "$PWD:/src:ro" -v "$PWD/build/linux-static:/out" winbox-static-builder sh /src/packaging/build-linux-static.sh
+      - name: Debian 11 smoke
+        run: |
+          docker run --rm -v "$PWD/build/linux-static/dist:/app:ro" -v /usr/share/fonts:/usr/share/fonts:ro -e SDL_VIDEO_DRIVER=dummy debian:11-slim /app/winbox3-linux-amd64 --profile /tmp/profile --smoke-ms 1500
       - uses: actions/upload-artifact@v4
         with:
           name: winbox3-linux-amd64
@@ -34,6 +37,13 @@ jobs:
           echo '```text' >> "$GITHUB_STEP_SUMMARY"
           tail -100 build-macos.log >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+          if [ '${{ job.status }}' = failure ]; then
+            python3 - <<'PY'
+          from pathlib import Path
+          text = '\n'.join(Path('build-macos.log').read_text(errors='replace').splitlines()[-80:])
+          print('::error title=macOS build diagnostics::' + text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+          PY
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: winbox3-macos-x86_64
@@ -52,4 +62,9 @@ jobs:
       - name: Publish packages
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" packages/winbox3-linux-amd64/winbox3-linux-amd64 packages/winbox3-macos-x86_64/*.zip --title "$GITHUB_REF_NAME" --generate-notes --prerelease
+        run: |
+          mkdir release-assets
+          cp packages/winbox3-linux-amd64/winbox3-linux-amd64 packages/winbox3-macos-x86_64/*.zip release-assets/
+          cp LICENSE NOTICE packaging/sources.json release-assets/
+          (cd release-assets; sha256sum winbox3-* > SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" release-assets/* --title "$GITHUB_REF_NAME" --generate-notes --prerelease

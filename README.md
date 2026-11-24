@@ -17,6 +17,8 @@ Managed/Neighbors, сохранение конфигурации и закрыт
 ./run.sh
 ```
 
+`run.sh` выбирает готовый статический Linux-пакет, затем `build/linux-check`,
+затем `build/full`. Для явного пути задайте `WINBOX_BINARY`.
 Или напрямую: `./build/full/winbox3`. Скрипт разработки `run.sh` сохраняет профиль
 в `build/full/profile/Mikrotik/Winbox/`. При прямом запуске профиль находится
 в `$XDG_CONFIG_HOME/winbox-recom` или `~/.config/winbox-recom` на Linux,
@@ -281,3 +283,10 @@ DISPLAY `:91`, чтобы Wine не появлялся на рабочем ст�
 
 Исходники runtime и инструментов опубликованы под GPL-3.0 (см. LICENSE).
 Оригинальный PE и его встроенные ресурсы не становятся GPL; см. NOTICE.
+
+
+Проверка сборки: 9/9 CTest на Linux; macOS Intel CI также выполняет все тесты,
+проверяет только системные dylib и deployment target 10.14. Linux ELF проверяется
+на отсутствие INTERP и NEEDED. Дополнительная проверка запуска проводится в Debian 11.
+Пакеты macOS без Tahoma/Courier New используют системные замены шрифтов;
+это может менять внешний вид и ширину текста.

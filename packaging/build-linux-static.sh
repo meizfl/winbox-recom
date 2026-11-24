@@ -29,7 +29,7 @@ cmake -S "$out/sources/sdl" -B "$out/sdl-build" -G Ninja -DCMAKE_INSTALL_PREFIX=
   -DSDL_KMSDRM=OFF -DSDL_OPENGL=OFF -DSDL_OPENGLES=OFF -DSDL_VULKAN=OFF -DSDL_RENDER=OFF -DSDL_GPU=OFF
 cmake --build "$out/sdl-build" -j4
 cmake --install "$out/sdl-build"
-cmake -S "$src" -B "$out/app-build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+cmake -S "$src" -B "$out/app-build" -G Ninja -U '*NATIVE_UI*' -DCMAKE_BUILD_TYPE=Release \
   -DWINBOX_STATIC_DEPENDENCIES=ON -DWINBOX_FULLY_STATIC=ON
 cmake --build "$out/app-build" -j4
 mkdir -p "$out/dist"

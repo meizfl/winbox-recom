@@ -21,6 +21,14 @@ static bool LoadDBUSLibrary(void) { dbus_handle = LoadDBUSSyms(); return dbus_ha
 s = s.replace('dbus_handle = NULL;', 'dbus_handle = false;')
 assert 'SDL_LoadObject(dbus_library)' not in s
 p.write_text(s)
+p = root / 'cmake/sdlchecks.cmake'
+s = p.read_text()
+# The software Wayland path needs EGL types, but calls no libEGL functions.
+# Keep libwayland-egl (wl_egl_window_*); do not require the Mesa EGL runtime.
+old = 'set(WAYLAND_PKG_CONFIG_SPEC "wayland-client>=1.18" wayland-egl wayland-cursor egl "xkbcommon>=0.5.0")'
+assert old in s
+s = s.replace(old, old.replace('wayland-cursor egl ', 'wayland-cursor '))
+p.write_text(s)
 p = root / 'CMakeLists.txt'
 s = p.read_text().replace('set(HAVE_DBUS TRUE)', 'set(HAVE_DBUS TRUE)\n          sdl_link_dependency(dbus LIBS ${DBUS_STATIC_LINK_LIBRARIES} PKG_CONFIG_SPECS dbus-1)')
 # pkg_search_module provides library names, not STATIC_LINK_LIBRARIES.
