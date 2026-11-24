@@ -8,6 +8,10 @@ on:
       build_run:
         description: Successful Native packages workflow run
         required: true
+        default: '45440476400'
+      linux_run:
+        description: Workflow run containing the successful Linux job
+        required: true
         default: '45438502769'
       tag:
         description: Preview tag for that source snapshot
@@ -21,7 +25,7 @@ jobs:
     runs-on: macos-15-intel
     timeout-minutes: 50
     env:
-      BUILD_RUN: ${{ inputs.build_run || '45438502769' }}
+      BUILD_RUN: ${{ inputs.build_run || '45440476400' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -55,18 +59,28 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
-      BUILD_RUN: ${{ inputs.build_run || '45438502769' }}
+      BUILD_RUN: ${{ inputs.build_run || '45440476400' }}
+      LINUX_RUN: ${{ inputs.linux_run || '45438502769' }}
       PREVIEW_TAG: ${{ inputs.tag || 'v0.1.0-preview.2' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - name: Require successful package validation
         run: gh run watch "$BUILD_RUN" --exit-status --interval 30
+      - name: Require the Linux job to have passed
+        run: gh api "repos/$GITHUB_REPOSITORY/actions/runs/$LINUX_RUN/jobs?per_page=100" --jq '.jobs[] | select(.name == "linux") | .conclusion' | grep -qx success
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ env.LINUX_RUN }}
+          name: winbox3-linux-amd64
+          path: packages/winbox3-linux-amd64
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
           run-id: ${{ env.BUILD_RUN }}
-          path: packages
+          name: winbox3-macos-x86_64
+          path: packages/winbox3-macos-x86_64
       - name: Publish validated artifacts
         shell: bash
         run: |
@@ -78,6 +92,9 @@ jobs:
             cp LICENSE NOTICE packaging/sources.json release-assets/
             (cd release-assets; sha256sum winbox3-* > SHA256SUMS)
             source_commit=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN" --jq .head_sha)
+            linux_commit=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$LINUX_RUN" --jq .head_sha)
+            git fetch --no-tags origin "$source_commit" "$linux_commit"
+            git diff --exit-code "$linux_commit" "$source_commit" -- runtime CMakeLists.txt tools/lift64.py tools/pe64.py tools/discover64.py winbox64.v3.43p10.exe packaging/build-linux-static.sh packaging/static_sdl_dbus.py packaging/SDL_waylandframebuffer.c packaging/fonts.conf packaging/linux-static.Dockerfile
             gh release view "$PREVIEW_TAG" || gh release create "$PREVIEW_TAG" --target "$source_commit" --title "$PREVIEW_TAG" --notes 'Native Linux amd64 static ELF and macOS Intel app targeting 10.14. Runtime tests, native headless Wayland and Debian 11 smoke are required to pass. Experimental compatibility runtime; physical macOS 10.14 validation remains outstanding.' --prerelease
             gh release upload "$PREVIEW_TAG" release-assets/* --clobber
           } 2>&1 | tee publish.log
