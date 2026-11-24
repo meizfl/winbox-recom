@@ -14,7 +14,7 @@ on:
         required: true
         default: '45438502769'
       tag:
-        description: Preview tag for that source snapshot
+        description: Existing preview tag for that source snapshot
         required: true
         default: v0.1.0-preview.2
 permissions:
@@ -95,7 +95,7 @@ jobs:
             linux_commit=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$LINUX_RUN" --jq .head_sha)
             git fetch --no-tags origin "$source_commit" "$linux_commit"
             git diff --exit-code "$linux_commit" "$source_commit" -- runtime CMakeLists.txt tools/lift64.py tools/pe64.py tools/discover64.py winbox64.v3.43p10.exe packaging/build-linux-static.sh packaging/static_sdl_dbus.py packaging/SDL_waylandframebuffer.c packaging/fonts.conf packaging/linux-static.Dockerfile
-            gh release view "$PREVIEW_TAG" || gh release create "$PREVIEW_TAG" --target "$source_commit" --title "$PREVIEW_TAG" --notes 'Native Linux amd64 static ELF and macOS Intel app targeting 10.14. Runtime tests, native headless Wayland and Debian 11 smoke are required to pass. Experimental compatibility runtime; physical macOS 10.14 validation remains outstanding.' --prerelease
+            gh release view "$PREVIEW_TAG" || gh release create "$PREVIEW_TAG" --verify-tag --title "$PREVIEW_TAG" --notes 'Native Linux amd64 static ELF and macOS Intel app targeting 10.14. Runtime tests, native headless Wayland and Debian 11 smoke are required to pass. Experimental compatibility runtime; physical macOS 10.14 validation remains outstanding.' --prerelease
             gh release upload "$PREVIEW_TAG" release-assets/* --clobber
           } 2>&1 | tee publish.log
       - name: Report publication failure
