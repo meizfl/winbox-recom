@@ -5,6 +5,18 @@ on:
 permissions:
   contents: write
 jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t winbox-static-builder -f packaging/linux-static.Dockerfile .
+      - run: |
+          mkdir -p build/linux-static
+          docker run --rm -v "$PWD:/src:ro" -v "$PWD/build/linux-static:/out" winbox-static-builder sh /src/packaging/build-linux-static.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: winbox3-linux-amd64
+          path: build/linux-static/dist/*
   macos:
     runs-on: macos-15-intel
     steps:
@@ -14,14 +26,30 @@ jobs:
           python-version: '3.12'
       - run: brew install cmake ninja pkgconf gperf
       - run: python3 -m pip install 'capstone>=5.0.7,<6' meson
-      - run: bash packaging/build-macos.sh
+      - name: Build macOS package
+        run: bash packaging/build-macos.sh 2>&1 | tee build-macos.log
+      - name: Build diagnostics
+        if: always()
+        run: |
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          tail -100 build-macos.log >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: winbox3-macos-x86_64
           path: |
             build/macos-release/dist/*.zip
             build/macos-release/dist/SHA256SUMS
-      - if: startsWith(github.ref, 'refs/tags/v')
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+      - name: Publish packages
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" build/macos-release/dist/*.zip --title "$GITHUB_REF_NAME" --generate-notes --prerelease
+        run: gh release create "$GITHUB_REF_NAME" packages/winbox3-linux-amd64/winbox3-linux-amd64 packages/winbox3-macos-x86_64/*.zip --title "$GITHUB_REF_NAME" --generate-notes --prerelease

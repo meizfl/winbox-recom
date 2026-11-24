@@ -22,5 +22,7 @@ s = s.replace('dbus_handle = NULL;', 'dbus_handle = false;')
 assert 'SDL_LoadObject(dbus_library)' not in s
 p.write_text(s)
 p = root / 'CMakeLists.txt'
-s = p.read_text().replace('set(HAVE_DBUS TRUE)', 'set(HAVE_DBUS TRUE)\n          list(APPEND SDL_EXTRA_LIBS ${DBUS_STATIC_LIBRARIES})\n          link_directories(${DBUS_LIBRARY_DIRS})')
+s = p.read_text().replace('set(HAVE_DBUS TRUE)', 'set(HAVE_DBUS TRUE)\n          sdl_link_dependency(dbus LIBS ${DBUS_STATIC_LINK_LIBRARIES} PKG_CONFIG_SPECS dbus-1)')
+# pkg_search_module provides library names, not STATIC_LINK_LIBRARIES.
+s = s.replace('${DBUS_STATIC_LINK_LIBRARIES}', '${DBUS_STATIC_LIBRARIES}')
 p.write_text(s)
