@@ -38,6 +38,13 @@ jobs:
         with:
           path: build/macos-release/deps
           key: macos-10.14-sdk-v2-${{ hashFiles('packaging/sources.json') }}
+      - uses: actions/cache/restore@v4
+        id: app-cache
+        with:
+          path: build/macos-release/app-build
+          key: macos-10.14-app-v1-${{ github.sha }}
+          restore-keys: macos-10.14-app-v1-
+      - run: python3 tools/restore_source_mtimes.py
       - name: Build macOS package
         shell: bash
         run: bash packaging/build-macos.sh 2>&1 | tee build-macos.log
@@ -46,6 +53,11 @@ jobs:
         with:
           path: build/macos-release/deps
           key: macos-10.14-sdk-v2-${{ hashFiles('packaging/sources.json') }}
+      - uses: actions/cache/save@v4
+        if: always() && steps.app-cache.outputs.cache-hit != 'true'
+        with:
+          path: build/macos-release/app-build
+          key: macos-10.14-app-v1-${{ github.sha }}
       - name: Build diagnostics
         if: always()
         run: |
