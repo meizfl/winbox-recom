@@ -1,0 +1,44 @@
+name: Publish tested preview
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/publish.yml]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 45431148165
+          path: packages
+      - name: Publish existing tested artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          {
+            find packages -maxdepth 4 -type f
+            mkdir release-assets
+            find packages -type f \( -name winbox3-linux-amd64 -o -name '*.zip' \) -exec cp '{}' release-assets/ \;
+            test -f release-assets/winbox3-linux-amd64
+            test -f release-assets/winbox3-macos-x86_64.zip
+            cp LICENSE NOTICE packaging/sources.json release-assets/
+            (cd release-assets; sha256sum winbox3-* > SHA256SUMS)
+            gh release view v0.1.0-preview.1 || gh release create v0.1.0-preview.1 --title v0.1.0-preview.1 --notes 'Native Linux amd64 static ELF and macOS Intel 10.14-targeted app. Experimental compatibility runtime. Both builds and Debian 11 smoke passed. macOS 10.14 hardware validation remains outstanding.' --prerelease
+            gh release upload v0.1.0-preview.1 release-assets/* --clobber
+          } 2>&1 | tee publish.log
+      - name: Report failure
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('publish.log')
+          text = '\n'.join(path.read_text(errors='replace').splitlines()[-60:]) if path.exists() else 'Artifact download failed before publication.'
+          print('::error title=Publish diagnostics::' + text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+          PY
