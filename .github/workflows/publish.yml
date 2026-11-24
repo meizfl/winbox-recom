@@ -21,7 +21,20 @@ permissions:
   contents: write
   actions: read
 jobs:
+  validate-builds:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      BUILD_RUN: ${{ inputs.build_run || '45496618769' }}
+      LINUX_RUN: ${{ inputs.linux_run || '45495685290' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Wait for builds without occupying a macOS runner
+        run: gh run watch "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --exit-status --interval 30
+      - name: Require the selected Linux job to have passed
+        run: gh api "repos/$GITHUB_REPOSITORY/actions/runs/$LINUX_RUN/jobs?per_page=100" --jq '.jobs[] | select(.name == "linux") | .conclusion' | grep -qx success
   macos-package-smoke:
+    needs: validate-builds
     strategy:
       fail-fast: false
       matrix:
@@ -37,8 +50,6 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - name: Require successful package validation
-        run: gh run watch "$BUILD_RUN" --exit-status --interval 30
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
