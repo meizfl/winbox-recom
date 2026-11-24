@@ -8,7 +8,7 @@ on:
       build_run:
         description: Successful Native packages workflow run
         required: true
-        default: '45495685290'
+        default: '45495968949'
       linux_run:
         description: Workflow run containing the successful Linux job
         required: true
@@ -16,7 +16,7 @@ on:
       tag:
         description: Existing preview tag for that source snapshot
         required: true
-        default: v0.1.0-preview.3
+        default: v0.2.0-preview.1
 permissions:
   contents: write
   actions: read
@@ -25,7 +25,7 @@ jobs:
     runs-on: macos-15-intel
     timeout-minutes: 50
     env:
-      BUILD_RUN: ${{ inputs.build_run || '45495685290' }}
+      BUILD_RUN: ${{ inputs.build_run || '45495968949' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -59,9 +59,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
-      BUILD_RUN: ${{ inputs.build_run || '45495685290' }}
+      BUILD_RUN: ${{ inputs.build_run || '45495968949' }}
       LINUX_RUN: ${{ inputs.linux_run || '45495685290' }}
-      PREVIEW_TAG: ${{ inputs.tag || 'v0.1.0-preview.3' }}
+      PREVIEW_TAG: ${{ inputs.tag || 'v0.2.0-preview.1' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
