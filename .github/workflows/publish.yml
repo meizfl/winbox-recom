@@ -8,15 +8,15 @@ on:
       build_run:
         description: Successful Native packages workflow run
         required: true
-        default: '45496618769'
+        default: '45500567427'
       linux_run:
         description: Workflow run containing the successful Linux job
         required: true
-        default: '45495685290'
+        default: '45500439237'
       tag:
         description: Existing preview tag for that source snapshot
         required: true
-        default: v0.2.0-preview.2
+        default: v0.2.0-preview.3
 permissions:
   contents: write
   actions: read
@@ -25,8 +25,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      BUILD_RUN: ${{ inputs.build_run || '45496618769' }}
-      LINUX_RUN: ${{ inputs.linux_run || '45495685290' }}
+      BUILD_RUN: ${{ inputs.build_run || '45500567427' }}
+      LINUX_RUN: ${{ inputs.linux_run || '45500439237' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Wait for builds without occupying a macOS runner
@@ -46,7 +46,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 50
     env:
-      BUILD_RUN: ${{ inputs.build_run || '45496618769' }}
+      BUILD_RUN: ${{ inputs.build_run || '45500567427' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -60,10 +60,25 @@ jobs:
         shell: bash
         run: |
           ditto -x -k package/winbox3-macos-${{ matrix.arch }}.zip "$RUNNER_TEMP/winbox-package"
-          SDL_VIDEO_DRIVER=cocoa "$RUNNER_TEMP/winbox-package/WinBox Recom.app/Contents/MacOS/winbox3" --profile "$RUNNER_TEMP/winbox-profile" --smoke-ms 2000 --screenshot "$RUNNER_TEMP/winbox-cocoa.png" 2>&1 | tee cocoa.log
-          grep -q 'WinBox event loop ready' cocoa.log
-          ! grep -qE 'lift stopped|WinBox presentation failed' cocoa.log
-          test -s "$RUNNER_TEMP/winbox-cocoa.png"
+          for theme in light dark; do
+            WINBOX_TEST_PIXEL_GEOMETRY=1 SDL_VIDEO_DRIVER=cocoa "$RUNNER_TEMP/winbox-package/WinBox Recom.app/Contents/MacOS/winbox3" --profile "$RUNNER_TEMP/winbox-profile" --theme "$theme" --smoke-ms 2000 --screenshot "$RUNNER_TEMP/winbox-cocoa-$theme.png" 2>&1 | tee "cocoa-$theme.log"
+            grep -q 'WinBox event loop ready' "cocoa-$theme.log"
+            ! grep -qE 'lift stopped|WinBox presentation failed' "cocoa-$theme.log"
+            test -s "$RUNNER_TEMP/winbox-cocoa-$theme.png"
+          done
+          cat cocoa-light.log cocoa-dark.log > cocoa.log
+          python3 - <<'PYCOCOA'
+          import re
+          from pathlib import Path
+          for theme in ('light','dark'):
+              data=Path('cocoa-'+theme+'.log').read_text()
+              frames=re.findall(r'points=(\d+)x(\d+) buffer=(\d+)x(\d+) frame=(\d+)x(\d+)',data)
+              assert frames, 'Missing native framebuffer diagnostic'
+              pw,ph,bw,bh,fw,fh=map(int,frames[-1])
+              assert (bw,bh)==(fw,fh), 'Cocoa final frame was scaled'
+              assert bw>=pw and bh>=ph
+              print(theme, 'native points', (pw,ph), 'device-pixel buffer', (bw,bh))
+          PYCOCOA
       - name: Report Cocoa failure
         if: failure()
         run: |
@@ -78,9 +93,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
-      BUILD_RUN: ${{ inputs.build_run || '45496618769' }}
-      LINUX_RUN: ${{ inputs.linux_run || '45495685290' }}
-      PREVIEW_TAG: ${{ inputs.tag || 'v0.2.0-preview.2' }}
+      BUILD_RUN: ${{ inputs.build_run || '45500567427' }}
+      LINUX_RUN: ${{ inputs.linux_run || '45500439237' }}
+      PREVIEW_TAG: ${{ inputs.tag || 'v0.2.0-preview.3' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
