@@ -139,8 +139,8 @@ jobs:
             git diff --exit-code "$linux_commit" "$source_commit" -- runtime CMakeLists.txt tools/lift64.py tools/pe64.py tools/discover64.py winbox64.v3.43p10.exe packaging/build-linux-static.sh packaging/static_sdl_dbus.py packaging/SDL_waylandframebuffer.c packaging/fonts.conf packaging/linux-static.Dockerfile
             tag_commit=$(git rev-list -n 1 "$PREVIEW_TAG" 2>/dev/null || git ls-remote origin "refs/tags/$PREVIEW_TAG" | cut -f1)
             test "$tag_commit" = "$source_commit"
-            gh release view "$PREVIEW_TAG" || gh release create "$PREVIEW_TAG" --verify-tag --title "WinBox Recom $PREVIEW_TAG — themes, icons and wallpapers" --notes-file "docs/releases/$PREVIEW_TAG.md" --prerelease
-            gh release edit "$PREVIEW_TAG" --title "WinBox Recom $PREVIEW_TAG — themes, icons and wallpapers" --notes-file "docs/releases/$PREVIEW_TAG.md" --prerelease
+            gh release view "$PREVIEW_TAG" || gh release create "$PREVIEW_TAG" --verify-tag --title "WinBox Recom $PREVIEW_TAG — themes, icons, wallpapers and HiDPI" --notes-file "docs/releases/$PREVIEW_TAG.md" --prerelease
+            gh release edit "$PREVIEW_TAG" --title "WinBox Recom $PREVIEW_TAG — themes, icons, wallpapers and HiDPI" --notes-file "docs/releases/$PREVIEW_TAG.md" --prerelease
             gh release upload "$PREVIEW_TAG" release-assets/* --clobber
           } 2>&1 | tee publish.log
       - name: Report publication failure
