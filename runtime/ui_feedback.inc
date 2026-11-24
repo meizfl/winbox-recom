@@ -21,13 +21,15 @@ static int upload_frame(Window *w,cairo_surface_t *frame) {
     SDL_Surface *destination=SDL_GetWindowSurface(w->native);
     int ok=0;
     if(source && destination) {
-        /* Keep the completed image at its logical pixel size while a larger
+        /* Keep the completed image at its device-pixel size while a larger
          * native buffer is waiting for WM_SIZE/WM_PAINT. Do not stretch it. */
         uint32_t background=0xffe2e2e2;
         if(width>2 && height>2) memcpy(&background,cairo_image_surface_get_data(frame)+(height-2)*cairo_image_surface_get_stride(frame)+4*(width-2),4);
         SDL_FillSurfaceRect(destination,NULL,background);
-        int logical_width=w->w,logical_height=w->h;SDL_GetWindowSize(w->native,&logical_width,&logical_height);if(logical_width<1) logical_width=w->w;if(logical_height<1) logical_height=w->h;SDL_Rect bounds={0,0,(int)lround((double)width*destination->w/logical_width),(int)lround((double)height*destination->h/logical_height)};
-        ok=SDL_BlitSurfaceScaled(source,NULL,destination,&bounds,SDL_SCALEMODE_NEAREST) && SDL_UpdateWindowSurface(w->native);
+        /* Both surfaces are device pixels. Scaling here would blur text on
+         * Retina/fractional Wayland and would hide a DPI/layout mismatch. */
+        if(getenv("WINBOX_TEST_PIXEL_GEOMETRY")) { int points_w,points_h;SDL_GetWindowSize(w->native,&points_w,&points_h);fprintf(stderr,"WinBox pixel geometry: points=%dx%d buffer=%dx%d frame=%dx%d\n",points_w,points_h,destination->w,destination->h,width,height); }
+        ok=SDL_BlitSurface(source,NULL,destination,NULL) && SDL_UpdateWindowSurface(w->native);
     }
     static int reported;
     if(!ok && !reported) { fprintf(stderr,"WinBox presentation failed (%s): %s\n",SDL_GetCurrentVideoDriver(),SDL_GetError());reported=1; }

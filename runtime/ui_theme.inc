@@ -46,12 +46,12 @@ static void theme_apply(cairo_surface_t *image,Window *root) {
             int x=0,y=0;
             if(x<0 || y<0 || x+w->w>width || y+w->h>height) continue;
             ThemeFrame *frame=&frames[count++];*frame=(ThemeFrame){x,y,w->w,w->h,w,NULL,y+2,0};int first=-1,last=-1;
-            for(int row=2;row<64 && row<w->h-2;row++) {
+            for(int row=2;row<dpi_units(64) && row<w->h-2;row++) {
                 int blue=0,samples=0;for(int col=12;col<w->w-40;col+=16) { uint32_t pixel;memcpy(&pixel,pixels+(y+row)*stride+(x+col)*4,4);blue+=theme_blue(pixel);samples++; }
                 if(samples && blue*2>samples) { if(first<0) first=row;last=row; }else if(first>=0) break;
             }
-            frame->active=first>=0;int band_height=frame->active ? last-first+1 : 18;frame->caption_y=y+(frame->active ? first : 2);
-            frame->caption=theme_copy_region(image,x+2,frame->caption_y,w->w-4-(frame->active ? 0 : 36),band_height);
+            frame->active=first>=0;int band_height=frame->active ? last-first+1 : dpi_units(18);frame->caption_y=y+(frame->active ? first : 2);
+            frame->caption=theme_copy_region(image,x+2,frame->caption_y,w->w-4-(frame->active ? 0 : dpi_units(36)),band_height);
             if(!frame->active && frame->caption) {
                 cairo_surface_flush(frame->caption);unsigned char *data=cairo_image_surface_get_data(frame->caption);int pitch=cairo_image_surface_get_stride(frame->caption),cw=cairo_image_surface_get_width(frame->caption);
                 for(int py=0;py<band_height;py++) for(int px=0;px<cw;px++) { uint32_t pixel;memcpy(&pixel,data+py*pitch+px*4,4);int v=(54*((pixel>>16)&255)+183*((pixel>>8)&255)+19*(pixel&255)+128)>>8;v=v<191 ? 20+v*28/191 : 48+(v-191)*188/64;pixel=0xff000000u|(v<<16)|((v+2>255 ? 255 : v+2)<<8)|(v+6>255 ? 255 : v+6);memcpy(data+py*pitch+px*4,&pixel,4); }
@@ -68,7 +68,7 @@ static void theme_apply(cairo_surface_t *image,Window *root) {
     int terminal_context=0;for(Window *p=root;p;p=window(p->parent)) if(p->title && !strncmp(p->title,"Terminal",8)) { terminal_context=1;break; }
     for(int y=0;y<height;y++) for(int x=0;x<width;x++) {
         uint32_t pixel;memcpy(&pixel,pixels+y*stride+4*x,4);unsigned r=(pixel>>16)&255,g=(pixel>>8)&255,b=pixel&255;int terminal=0;
-        terminal=terminal_context && (!count || y>frames[0].caption_y+20);
+        terminal=terminal_context && (!count || y>frames[0].caption_y+dpi_units(20));
         pixel=terminal ? theme_terminal_pixel(pixel) : (pixel>>24)==255 && r==g && g==b ? gray[r] : theme_pixel(pixel);memcpy(pixels+y*stride+4*x,&pixel,4);
     }
     cairo_surface_mark_dirty(image);cairo_t *cr=cairo_create(image);
@@ -77,14 +77,14 @@ static void theme_apply(cairo_surface_t *image,Window *root) {
     cairo_destroy(cr);
 }
 static int theme_control(Window *w,int x,int y) {
-    if(!w || !w->native || !menu_height(w) || w->w<320 || (strcmp(w->class_name,"routeros_main") && strcmp(w->class_name,"routeros_connect"))) return 0;
-    return x>=w->w-82 && x<w->w-4 && y>=1 && y<menu_height(w)-1;
+    if(!w || !w->native || !menu_height(w) || w->w<dpi_units(320) || (strcmp(w->class_name,"routeros_main") && strcmp(w->class_name,"routeros_connect"))) return 0;
+    return x>=w->w-dpi_units(82) && x<w->w-dpi_units(4) && y>=dpi_units(1) && y<menu_height(w)-dpi_units(1);
 }
 static void theme_control_paint(cairo_t *cr,Window *w) {
-    if(!theme_control(w,w->w-40,8)) return;
-    int left=w->w-82,hover=theme.hover==w->hwnd,pressed=theme.pressed==w->hwnd;
+    if(!theme_control(w,w->w-dpi_units(40),dpi_units(8))) return;
+    int left=(int)lround(w->w/dpi_scale)-82,hover=theme.hover==w->hwnd,pressed=theme.pressed==w->hwnd;
     double background=theme.dark ? (pressed ? .27 : hover ? .24 : .19) : (pressed ? .77 : hover ? .9 : .86);
-    cairo_save(cr);cairo_set_source_rgb(cr,background,background,background+(theme.dark ? .025 : 0));cairo_rectangle(cr,left+.5,1.5,77,16);cairo_fill_preserve(cr);
+    cairo_save(cr);cairo_scale(cr,dpi_scale,dpi_scale);cairo_set_source_rgb(cr,background,background,background+(theme.dark ? .025 : 0));cairo_rectangle(cr,left+.5,1.5,77,16);cairo_fill_preserve(cr);
     cairo_set_source_rgb(cr,theme.dark ? .39 : .68,theme.dark ? .43 : .68,theme.dark ? .50 : .68);cairo_set_line_width(cr,1);cairo_stroke(cr);
     cairo_set_source_rgb(cr,theme.dark ? .94 : .16,theme.dark ? .82 : .19,theme.dark ? .49 : .31);
     if(theme.dark) {

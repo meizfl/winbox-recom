@@ -17,3 +17,5 @@ done
 test -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
 "$out/app-build/native-surface-tests"
 ctest --test-dir "$out/app-build" --output-on-failure
+
+sh "$(dirname "$0")/test-linux-hidpi.sh" "$out"
