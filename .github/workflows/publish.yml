@@ -8,15 +8,15 @@ on:
       build_run:
         description: Successful Native packages workflow run
         required: true
-        default: '45500567427'
+        default: '45597071694'
       linux_run:
         description: Workflow run containing the successful Linux job
         required: true
-        default: '45500439237'
+        default: '45597071694'
       tag:
         description: Existing preview tag for that source snapshot
         required: true
-        default: v0.2.0-preview.3
+        default: v0.2.0-preview.4
 permissions:
   contents: write
   actions: read
@@ -40,8 +40,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      BUILD_RUN: ${{ inputs.build_run || '45500567427' }}
-      LINUX_RUN: ${{ inputs.linux_run || '45500439237' }}
+      BUILD_RUN: ${{ inputs.build_run || '45597071694' }}
+      LINUX_RUN: ${{ inputs.linux_run || '45597071694' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Wait for builds without occupying a macOS runner
@@ -61,7 +61,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 50
     env:
-      BUILD_RUN: ${{ inputs.build_run || '45500567427' }}
+      BUILD_RUN: ${{ inputs.build_run || '45597071694' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -108,9 +108,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
-      BUILD_RUN: ${{ inputs.build_run || '45500567427' }}
-      LINUX_RUN: ${{ inputs.linux_run || '45500439237' }}
-      PREVIEW_TAG: ${{ inputs.tag || 'v0.2.0-preview.3' }}
+      BUILD_RUN: ${{ inputs.build_run || '45597071694' }}
+      LINUX_RUN: ${{ inputs.linux_run || '45597071694' }}
+      PREVIEW_TAG: ${{ inputs.tag || 'v0.2.0-preview.4' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
