@@ -55,6 +55,11 @@ static void theme_apply(cairo_surface_t *image,Window *root) {
             if(!frame->active && frame->caption) {
                 cairo_surface_flush(frame->caption);unsigned char *data=cairo_image_surface_get_data(frame->caption);int pitch=cairo_image_surface_get_stride(frame->caption),cw=cairo_image_surface_get_width(frame->caption);
                 for(int py=0;py<band_height;py++) for(int px=0;px<cw;px++) { uint32_t pixel;memcpy(&pixel,data+py*pitch+px*4,4);int v=(54*((pixel>>16)&255)+183*((pixel>>8)&255)+19*(pixel&255)+128)>>8;v=v<191 ? 20+v*28/191 : 48+(v-191)*188/64;pixel=0xff000000u|(v<<16)|((v+2>255 ? 255 : v+2)<<8)|(v+6>255 ? 255 : v+6);memcpy(data+py*pitch+px*4,&pixel,4); }
+                /* The inactive guest caption includes a raised bottom bevel.
+                 * Flatten it into the caption background, rather than restoring
+                 * the light GDI highlight over the dark window surface. */
+                for(int py=band_height-dpi_units(2);py<band_height;py++) if(py>=0)
+                    for(int px=0;px<cw;px++) { uint32_t background=0xff303236;memcpy(data+py*pitch+px*4,&background,4); }
                 cairo_surface_mark_dirty(frame->caption);
             }
         }
@@ -73,7 +78,7 @@ static void theme_apply(cairo_surface_t *image,Window *root) {
     }
     cairo_surface_mark_dirty(image);cairo_t *cr=cairo_create(image);
     if(brand) { cairo_set_source_surface(cr,brand,brand_x,brand_y);cairo_paint(cr);cairo_surface_destroy(brand); }
-    for(unsigned i=0;i<count;i++) { ThemeFrame *frame=&frames[i];if(frame->caption) { cairo_set_source_surface(cr,frame->caption,frame->x+2,frame->caption_y);cairo_paint(cr);cairo_surface_destroy(frame->caption); }cairo_set_line_width(cr,1);cairo_set_source_rgb(cr,.08,.10,.13);cairo_rectangle(cr,frame->x+.5,frame->y+.5,frame->w-1,frame->h-1);cairo_stroke(cr);cairo_set_source_rgb(cr,.19,.21,.25);cairo_rectangle(cr,frame->x+1.5,frame->y+1.5,frame->w-3,frame->h-3);cairo_stroke(cr); }
+    for(unsigned i=0;i<count;i++) { ThemeFrame *frame=&frames[i];if(frame->caption) { cairo_set_source_surface(cr,frame->caption,frame->x+2,frame->caption_y);cairo_paint(cr);cairo_surface_destroy(frame->caption); }if(!frame->active) { cairo_set_source_rgb(cr,48/255.,50/255.,54/255.);cairo_rectangle(cr,frame->x+2,frame->caption_y+dpi_units(18),frame->w-4,dpi_units(2));cairo_fill(cr); }cairo_set_line_width(cr,1);cairo_set_source_rgb(cr,.08,.10,.13);cairo_rectangle(cr,frame->x+.5,frame->y+.5,frame->w-1,frame->h-1);cairo_stroke(cr);cairo_set_source_rgb(cr,.19,.21,.25);cairo_rectangle(cr,frame->x+1.5,frame->y+1.5,frame->w-3,frame->h-3);cairo_stroke(cr); }
     cairo_destroy(cr);
 }
 static int theme_control(Window *w,int x,int y) {

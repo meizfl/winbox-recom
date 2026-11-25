@@ -239,7 +239,7 @@ static void composite(cairo_t *cr,Window *w,int x,int y) { cairo_save(cr);cairo_
 int ui_theme_composition_test(void) {
     theme.initialized=1;theme.dark=1;
     Window *root=&ui.windows[1],*back=&ui.windows[2],*front=&ui.windows[3];
-    *root=(Window){.used=1,.hwnd=WH(1),.w=320,.h=240,.class_name="fixture",.title="",.surface=surface(320,240)};
+    *root=(Window){.used=1,.visible=1,.hwnd=WH(1),.w=320,.h=240,.class_name="fixture",.title="",.surface=surface(320,240)};
     *back=(Window){.used=1,.visible=1,.hwnd=WH(2),.parent=WH(1),.x=80,.y=60,.w=200,.h=150,.class_name="routeros_dbl_canvas",.title="Interfaces",.surface=surface(200,150)};
     *front=(Window){.used=1,.visible=1,.hwnd=WH(3),.parent=WH(1),.x=20,.y=20,.w=220,.h=180,.class_name="routeros_dbl_canvas",.title="Terminal <1>",.surface=surface(220,180)};
     for(unsigned i=1;i<=3;i++) { Window *w=&ui.windows[i];cairo_t *c=cairo_create(w->surface);cairo_set_source_rgb(c,1,1,1);cairo_paint(c);if(i>1) { cairo_set_source_rgb(c,.3,.3,.8);cairo_rectangle(c,2,2,w->w-4,18);cairo_fill(c); }cairo_destroy(c); }
@@ -260,6 +260,10 @@ int ui_theme_composition_test(void) {
     cr=cairo_create(image);composite(cr,root,0,0);cairo_destroy(cr);cairo_surface_flush(image);memcpy(&pixel,data+125*stride+100*4,4);if(pixel!=theme_pixel(0xffffffff)) ok=0;
     position_zorder(back,1,0);hx=100;hy=130;if(hit(root,&hx,&hy)!=front) ok=0;
     position_zorder(front,back->hwnd,0);hx=100;hy=130;if(hit(root,&hx,&hy)!=back) ok=0;
+    /* An inactive caption's original bottom bevel must not become a bright stripe. */
+    cairo_t *caption=cairo_create(back->surface);cairo_set_source_rgb(caption,.75,.75,.75);cairo_rectangle(caption,2,2,back->w-4,18);cairo_fill(caption);cairo_set_source_rgb(caption,1,1,1);cairo_rectangle(caption,2,18,back->w-40,4);cairo_fill(caption);cairo_destroy(caption);
+    cairo_surface_t *inactive=theme_copy_region(back->surface,0,0,back->w,back->h);theme_apply(inactive,back);cairo_surface_flush(inactive);
+    memcpy(&pixel,cairo_image_surface_get_data(inactive)+18*cairo_image_surface_get_stride(inactive)+40*4,4);if(pixel!=0xff303236) ok=0;memcpy(&pixel,cairo_image_surface_get_data(inactive)+20*cairo_image_surface_get_stride(inactive)+40*4,4);if(pixel!=0xff303236) ok=0;cairo_surface_destroy(inactive);
     cairo_surface_destroy(image);for(unsigned i=1;i<=3;i++) { cairo_surface_destroy(ui.windows[i].surface);memset(&ui.windows[i],0,sizeof(Window)); }return ok;
 }
 int ui_wallpaper_composition_test(const char *path) {
